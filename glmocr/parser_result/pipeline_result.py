@@ -26,6 +26,7 @@ class PipelineResult(BaseParserResult):
         original_images: List[str],
         layout_vis_dir: Optional[str] = None,
         layout_image_indices: Optional[List[int]] = None,
+        image_files: Optional[dict] = None,
     ):
         """Initialize.
 
@@ -36,11 +37,14 @@ class PipelineResult(BaseParserResult):
             layout_vis_dir: Temp dir with layout_page{N}.jpg (optional).
             layout_image_indices: Indices of layout pages belonging to this unit;
                 None means all files in layout_vis_dir belong to this unit.
+            image_files: Mapping of ``filename`` → PIL Image for image-type
+                regions; saved directly to ``imgs/`` during :meth:`save`.
         """
         super().__init__(
             json_result=json_result,
             markdown_result=markdown_result,
             original_images=original_images,
+            image_files=image_files,
         )
         self.layout_vis_dir = layout_vis_dir
         self.layout_image_indices = layout_image_indices

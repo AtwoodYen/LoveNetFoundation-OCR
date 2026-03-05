@@ -268,12 +268,16 @@ class Pipeline:
                 time.sleep(0.05)
                 continue
 
-            json_u, md_u = self.result_formatter.process(grouped)
+            cropped_images = state.collect_cropped_images_for_unit(page_indices)
+            json_u, md_u, image_files = self.result_formatter.process(
+                grouped, cropped_images=cropped_images or None,
+            )
             yield PipelineResult(
                 json_result=json_u,
                 markdown_result=md_u,
                 original_images=[original_inputs[u]],
                 layout_vis_dir=layout_vis_output_dir,
                 layout_image_indices=page_indices,
+                image_files=image_files or None,
             )
             emitted.add(u)

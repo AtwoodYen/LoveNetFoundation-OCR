@@ -47,6 +47,10 @@ class PipelineState:
         self._results_by_page: Dict[int, List[Dict]] = {}
         self._results_lock = threading.Lock()
 
+        # ── Pre-cropped images for image-type regions ─────────────────
+        self._image_region_store: Dict[int, Dict[tuple, Any]] = {}
+        self._image_store_lock = threading.Lock()
+
         # ── UnitTracker (set before threads start) ───────────────────
         self._tracker: Optional[UnitTracker] = None
 
@@ -124,6 +128,35 @@ class PipelineState:
         """
         with self._results_lock:
             return [list(self._results_by_page.get(pi, [])) for pi in page_indices]
+
+    # ------------------------------------------------------------------
+    # Pre-cropped image store (for image-type regions)
+    # ------------------------------------------------------------------
+
+    def store_cropped_image(self, page_idx: int, bbox: list, image: Any) -> None:
+        """Store a pre-cropped image for an image-type (skip) region.
+
+        Called by the recognition worker for regions with ``task_type == "skip"``.
+        """
+        key = tuple(bbox)
+        with self._image_store_lock:
+            self._image_region_store.setdefault(page_idx, {})[key] = image
+
+    def collect_cropped_images_for_unit(
+        self, page_indices: List[int]
+    ) -> Dict[tuple, Any]:
+        """Collect pre-cropped images for one unit, re-keyed by local page index.
+
+        Returns a dict mapping ``(local_page_idx, *bbox)`` → PIL Image.
+        Consumed entries are removed from the store to free memory.
+        """
+        result: Dict[tuple, Any] = {}
+        with self._image_store_lock:
+            for local_idx, global_idx in enumerate(page_indices):
+                page_store = self._image_region_store.pop(global_idx, {})
+                for bbox_key, img in page_store.items():
+                    result[(local_idx, *bbox_key)] = img
+        return result
 
     # ------------------------------------------------------------------
     # UnitTracker lifecycle

@@ -311,6 +311,11 @@ def recognition_worker(
             if identifier == IDENTIFIER_REGION:
                 if msg["region"]["task_type"] == "skip":
                     msg["region"]["content"] = None
+                    bbox = msg["region"].get("bbox_2d")
+                    if bbox and "cropped_image" in msg:
+                        state.store_cropped_image(
+                            msg["page_idx"], bbox, msg["cropped_image"]
+                        )
                     state.add_recognition_result(msg["page_idx"], msg["region"])
                 else:
                     req = page_loader.build_request_from_image(

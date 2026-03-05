@@ -31,6 +31,7 @@ from pathlib import Path
 from glmocr.config import load_config
 from glmocr.parser_result import PipelineResult
 from glmocr.utils.logging import get_logger, ensure_logging_configured
+from glmocr.utils.markdown_utils import resolve_image_regions
 
 logger = get_logger(__name__)
 
@@ -364,8 +365,8 @@ class GlmOcr:
     # ------------------------------------------------------------------
     # The MaaS API returns bbox_2d in **absolute pixel coordinates** of
     # its own internal rendering (e.g. 2040×2640 for a letter-sized PDF
-    # page).  The rest of the SDK (self-hosted pipeline, crop_image_region,
-    # crop_and_replace_images) uses **normalised 0-1000 coordinates**.
+    # page).  The rest of the SDK (self-hosted pipeline,
+    # resolve_image_regions) uses **normalised 0-1000 coordinates**.
     #
     # To keep everything consistent we convert here, right after receiving
     # the MaaS response, so that json_result and markdown_result always
@@ -398,8 +399,8 @@ class GlmOcr:
         pages_info: List[Dict[str, int]],
     ) -> str:
         """Replace absolute-pixel bbox values in Markdown image refs with
-        normalised 0-1000 values so that ``crop_and_replace_images`` crops
-        from the correct region.
+        normalised 0-1000 values so that the result formatter resolves
+        the correct region.
         """
         if not pages_info or not markdown:
             return markdown
@@ -466,11 +467,16 @@ class GlmOcr:
             pages_info,
         )
 
+        json_result, markdown_result, image_files = resolve_image_regions(
+            json_result, markdown_result, source,
+        )
+
         # Create PipelineResult
         result = PipelineResult(
             json_result=json_result,
             markdown_result=markdown_result,
             original_images=[source],
+            image_files=image_files or None,
         )
 
         # Store additional MaaS response data

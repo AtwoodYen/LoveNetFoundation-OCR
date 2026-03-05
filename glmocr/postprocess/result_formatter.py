@@ -43,7 +43,7 @@ class ResultFormatter(BasePostProcessor):
         formatter = ResultFormatter(ResultFormatterConfig())
 
         # Layout mode: process grouped results
-        json_str, md_str = formatter.process(grouped_results)
+        json_str, md_str, image_files = formatter.process(grouped_results)
 
         # OCR-only mode: format a single output
         json_str, md_str = formatter.format_ocr_result(content)
@@ -132,14 +132,25 @@ class ResultFormatter(BasePostProcessor):
     # Layout mode
     # =========================================================================
 
-    def process(self, grouped_results: List[List[Dict]]) -> Tuple[str, str]:
+    def process(
+        self,
+        grouped_results: List[List[Dict]],
+        cropped_images: Dict[tuple, Any] | None = None,
+        image_prefix: str = "cropped",
+    ) -> Tuple[str, str, Dict[str, Any]]:
         """Process grouped results in layout mode.
 
         Args:
             grouped_results: Region recognition results grouped by page.
+            cropped_images: Pre-cropped PIL images keyed by
+                ``(local_page_idx, *bbox)``; when provided, image regions
+                are resolved to final file paths directly in the markdown
+                and JSON output.
+            image_prefix: Filename prefix for saved images.
 
         Returns:
-            (json_str, markdown_str)
+            (json_str, markdown_str, image_files) where *image_files* maps
+            ``filename`` → PIL Image for the caller to persist.
         """
         json_final_results = []
 
@@ -190,7 +201,9 @@ class ResultFormatter(BasePostProcessor):
 
                 json_final_results.append(json_page_results)
 
-        # Generate markdown results
+        # Generate markdown results and resolve image regions
+        image_files: Dict[str, Any] = {}
+        image_counter = 0
         with profiler.measure("generate_markdown"):
             markdown_final_results = []
             for page_idx, json_page_results in enumerate(json_final_results):
@@ -198,9 +211,22 @@ class ResultFormatter(BasePostProcessor):
                 for result in json_page_results:
                     content = result["content"]
                     if result["label"] == "image":
-                        markdown_page_results.append(
-                            f"![](page={page_idx},bbox={result.get('bbox_2d', [])})"
+                        bbox = result.get("bbox_2d", [])
+                        key = (page_idx, *bbox) if bbox else None
+                        img = (
+                            cropped_images.get(key)
+                            if cropped_images and key
+                            else None
                         )
+                        if img is not None:
+                            filename = f"{image_prefix}_page{page_idx}_idx{image_counter}.jpg"
+                            rel_path = f"imgs/{filename}"
+                            image_files[filename] = img
+                            result["image_path"] = rel_path
+                            markdown_page_results.append(
+                                f"![Image {page_idx}-{image_counter}]({rel_path})"
+                            )
+                            image_counter += 1
                     elif content:
                         markdown_page_results.append(content)
                 markdown_final_results.append("\n\n".join(markdown_page_results))
@@ -209,7 +235,7 @@ class ResultFormatter(BasePostProcessor):
             json_str = json.dumps(json_final_results, ensure_ascii=False)
         markdown_str = "\n\n".join(markdown_final_results)
 
-        return json_str, markdown_str
+        return json_str, markdown_str, image_files
 
     # =========================================================================
     # Content handling
