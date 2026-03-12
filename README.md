@@ -29,7 +29,7 @@ GLM-OCR is a multimodal OCR model for complex document understanding, built on t
 
 ### News & Updates
 
-- **[Coming Soon]** GLM-OCR Technical Report
+- **[2026.3.12]** GLM-OCR Technical Report is now available. See: [GLM-OCR Technical Report](https://arxiv.org/abs/2603.10910)
 - **[2026.2.12]** Fine-tuning tutorial based on LLaMA-Factory is now available. See: [GLM-OCR Fine-tuning Guide](examples/finetune/README.md)
 
 ### Download Model
@@ -337,4 +337,17 @@ The GLM-OCR model is released under the MIT License.
 The complete OCR pipeline integrates [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3) for document layout analysis, which is licensed under the Apache License 2.0. Users should comply with both licenses when using this project.
 
 ## Citation
-GLM-OCR technical report is coming soon.
+
+If you find GLM-OCR useful in your research, please cite our technical report:
+
+```bibtex
+@misc{duan2026glmocrtechnicalreport,
+      title={GLM-OCR Technical Report},
+      author={Shuaiqi Duan and Yadong Xue and Weihan Wang and Zhe Su and Huan Liu and Sheng Yang and Guobing Gan and Guo Wang and Zihan Wang and Shengdong Yan and Dexin Jin and Yuxuan Zhang and Guohong Wen and Yanfeng Wang and Yutao Zhang and Xiaohan Zhang and Wenyi Hong and Yukuo Cen and Da Yin and Bin Chen and Wenmeng Yu and Xiaotao Gu and Jie Tang},
+      year={2026},
+      eprint={2603.10910},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2603.10910},
+}
+```

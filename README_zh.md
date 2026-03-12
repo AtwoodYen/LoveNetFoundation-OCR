@@ -29,7 +29,7 @@ GLM-OCR 是一款面向复杂文档理解的多模态 OCR 模型，基于 GLM-V 
 
 ### 最新动态
 
-- **[Coming Soon]** GLM-OCR 技术报告
+- **[2026.3.12]** GLM-OCR 技术报告已上线，详情见：[GLM-OCR 技术报告](https://arxiv.org/abs/2603.10910)
 - **[2026.2.12]** 基于 LLaMA-Factory 的微调教程上线，详情见： [GLM-OCR 微调教程](examples/finetune/README_zh.md)
 
 ### 下载模型
@@ -338,4 +338,17 @@ GLM-OCR 模型遵循 MIT License。
 完整 OCR pipeline 集成了用于文档版面分析的 [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3)，该组件遵循 Apache License 2.0。使用本项目时请同时遵守相关许可证。
 
 ## 引用
-GLM-OCR 技术报告即将发布。
+
+如果 GLM-OCR 对您的研究有所帮助，欢迎引用我们的技术报告：
+
+```bibtex
+@misc{duan2026glmocrtechnicalreport,
+      title={GLM-OCR Technical Report},
+      author={Shuaiqi Duan and Yadong Xue and Weihan Wang and Zhe Su and Huan Liu and Sheng Yang and Guobing Gan and Guo Wang and Zihan Wang and Shengdong Yan and Dexin Jin and Yuxuan Zhang and Guohong Wen and Yanfeng Wang and Yutao Zhang and Xiaohan Zhang and Wenyi Hong and Yukuo Cen and Da Yin and Bin Chen and Wenmeng Yu and Xiaotao Gu and Jie Tang},
+      year={2026},
+      eprint={2603.10910},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2603.10910},
+}
+```
