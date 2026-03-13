@@ -45,10 +45,17 @@ GLM-OCR 是一款面向复杂文档理解的多模态 OCR 模型，基于 GLM-V 
 
 ### 安装 SDK
 
-直接使用:
+按场景选择最轻量的安装方式：
 
 ```bash
+# 云端 / MaaS + 本地图片/PDF（安装最快）
 pip install glmocr
+
+# 自部署完整流水线（版面分析）
+pip install "glmocr[selfhosted]"
+
+# Flask 服务支持
+pip install "glmocr[server]"
 ```
 
 从源码安装, 方便修改:
@@ -93,6 +100,12 @@ API 文档：https://docs.bigmodel.cn/cn/guide/models/vlm/glm-ocr
 #### 方式 2：使用 vLLM / SGLang 自部署
 
 本地部署 GLM-OCR 模型，完全掌控。SDK 提供完整的处理流水线：版面检测、并行区域 OCR、结果格式化。
+
+请先安装自部署依赖：
+
+```bash
+pip install "glmocr[selfhosted]"
+```
 
 ##### 使用 vLLM
 
@@ -200,6 +213,12 @@ with GlmOcr() as parser:
 ```
 
 #### Flask 服务
+
+请先安装可选的 server 依赖：
+
+```bash
+pip install "glmocr[server]"
+```
 
 ```bash
 # 启动服务

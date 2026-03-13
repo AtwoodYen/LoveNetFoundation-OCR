@@ -1,13 +1,12 @@
 """Image processing utilities."""
 
 import io
-import cv2
 import base64
 import math
 from io import BytesIO
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def smart_resize(
@@ -204,34 +203,28 @@ def crop_image_region(image, bbox_2d, polygon=None, fill_color=255):
     if not polygon or len(polygon) < 3:
         return image.crop((x1, y1, x2, y2))
 
-    # Convert to numpy array once
-    img_array = np.asarray(image)
+    # Crop the bbox region first
+    cropped = image.crop((x1, y1, x2, y2))
 
-    # Crop the bbox region
-    img_crop = img_array[y1:y2, x1:x2]
-    crop_height, crop_width = img_crop.shape[:2]
-
-    # Pre-compute polygon coordinates
+    # Pre-compute polygon coordinates in crop-local space
     scale_x = image_width / 1000
     scale_y = image_height / 1000
-    polygon_pixels = np.empty((len(polygon), 2), dtype=np.int32)
-    for i, point in enumerate(polygon):
-        polygon_pixels[i, 0] = int(point[0] * scale_x) - x1
-        polygon_pixels[i, 1] = int(point[1] * scale_y) - y1
+    polygon_pixels = [
+        (int(point[0] * scale_x) - x1, int(point[1] * scale_y) - y1)
+        for point in polygon
+    ]
 
-    # Create mask
-    mask = np.zeros((crop_height, crop_width), dtype=np.uint8)
-    cv2.fillPoly(mask, [polygon_pixels], 1)
+    # Create polygon mask using Pillow to avoid an OpenCV dependency.
+    mask = Image.new("L", cropped.size, 0)
+    ImageDraw.Draw(mask).polygon(polygon_pixels, fill=255)
 
-    # Create output image with fill_color
-    if len(img_crop.shape) == 3:
-        output = np.full_like(img_crop, fill_color, dtype=np.uint8)
+    if isinstance(fill_color, int) and cropped.mode in ("RGB", "RGBA"):
+        fill = (fill_color,) * len(cropped.getbands())
     else:
-        output = np.full((crop_height, crop_width), fill_color, dtype=np.uint8)
-    cv2.copyTo(img_crop, mask, output)
+        fill = fill_color
 
-    # Convert back to PIL Image
-    return Image.fromarray(output)
+    background = Image.new(cropped.mode, cropped.size, fill)
+    return Image.composite(cropped, background, mask)
 
 
 def image_tensor_to_base64(image_tensor, image_format):

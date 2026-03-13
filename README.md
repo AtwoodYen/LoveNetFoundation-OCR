@@ -45,10 +45,17 @@ We provide an SDK for using GLM-OCR more efficiently and conveniently.
 
 ### Install SDK
 
-Install directly:
+Choose the lightest installation that matches your scenario:
 
 ```bash
+# Cloud / MaaS + local images / PDFs (fastest install)
 pip install glmocr
+
+# Self-hosted pipeline (layout detection)
+pip install "glmocr[selfhosted]"
+
+# Flask service support
+pip install "glmocr[server]"
 ```
 
 Install from source for development:
@@ -94,6 +101,12 @@ API documentation: https://docs.bigmodel.cn/cn/guide/models/vlm/glm-ocr
 #### Option 2: Self-host with vLLM / SGLang
 
 Deploy the GLM-OCR model locally for full control. The SDK provides the complete pipeline: layout detection, parallel region OCR, and result formatting.
+
+Install the self-hosted extra first:
+
+```bash
+pip install "glmocr[selfhosted]"
+```
 
 ##### Using vLLM
 
@@ -201,6 +214,12 @@ with GlmOcr() as parser:
 ```
 
 #### Flask Service
+
+Install the optional server dependency first:
+
+```bash
+pip install "glmocr[server]"
+```
 
 ```bash
 # Start service

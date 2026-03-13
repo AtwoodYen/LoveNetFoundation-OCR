@@ -6,7 +6,15 @@ import traceback
 import multiprocessing
 from typing import TYPE_CHECKING
 
-from flask import Flask, request, jsonify
+try:
+    from flask import Flask, request, jsonify
+
+    _FLASK_IMPORT_ERROR = None
+except ImportError as e:  # pragma: no cover
+    Flask = None  # type: ignore
+    request = None  # type: ignore
+    jsonify = None  # type: ignore
+    _FLASK_IMPORT_ERROR = e
 
 from glmocr.pipeline import Pipeline
 from glmocr.config import load_config
@@ -30,6 +38,12 @@ def create_app(config: "GlmOcrConfig") -> Flask:
     Returns:
         Flask app instance.
     """
+    if Flask is None:
+        raise ImportError(
+            "Flask server support requires the optional server extra. "
+            "Install with: pip install 'glmocr[server]'"
+        ) from _FLASK_IMPORT_ERROR
+
     app = Flask(__name__)
 
     # Create pipeline with typed config

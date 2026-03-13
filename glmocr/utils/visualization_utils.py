@@ -4,7 +4,6 @@ from typing import List, Dict, Tuple
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
-import cv2
 
 
 def get_colormap(rgb: bool = True) -> List[Tuple[int, int, int]]:
@@ -153,7 +152,7 @@ def _draw_polygon_masks(
     """Draw polygon masks on image with alpha blending.
 
     Args:
-        image: Input image as numpy array (RGB format, float32).
+        image: Input image as numpy array (RGB format).
         boxes: List of detection boxes with polygon_points.
         label2color: Dictionary mapping labels to colors.
         alpha: Alpha value for blending (0-1).
@@ -161,35 +160,31 @@ def _draw_polygon_masks(
     Returns:
         Image with masks drawn as numpy array.
     """
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
 
-    im = image.astype("float32")
-    img_height, img_width = im.shape[:2]
+    base = Image.fromarray(image).convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
 
     for i, box_info in enumerate(boxes):
-        polygon_points = box_info.get("polygon_points")
+        polygon_points = box_info.get("polygon_points") or []
         if len(polygon_points) < 3:
             continue
 
         # Use the same color as label text
         label = box_info.get("label", "unknown")
         if label in label2color:
-            color_mask = np.array(label2color[label])
+            color_mask = tuple(label2color[label])
         else:
             continue  # Skip if no color assigned
 
-        # Create mask for this polygon
-        mask = np.zeros((img_height, img_width), dtype=np.uint8)
-        polygon = np.array(polygon_points, dtype=np.int32)
-        polygon = polygon.reshape((-1, 1, 2))
-        cv2.fillPoly(mask, [polygon], 1)
+        draw.polygon(
+            [(int(x), int(y)) for x, y in polygon_points],
+            fill=color_mask + (int(alpha * 255),),
+        )
 
-        # Apply alpha blending
-        idx = np.nonzero(mask)
-        im[idx[0], idx[1], :] = (1.0 - alpha) * im[
-            idx[0], idx[1], :
-        ] + alpha * color_mask
-
-    return np.uint8(im)
+    return np.array(Image.alpha_composite(base, overlay).convert("RGB"))
 
 
 def draw_layout_boxes(

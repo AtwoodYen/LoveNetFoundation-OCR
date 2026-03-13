@@ -250,6 +250,32 @@ class TestUtils:
 
         assert callable(crop_image_region)
 
+    def test_image_utils_crop_image_region_polygon_without_opencv(self):
+        """Polygon crop works without requiring OpenCV."""
+        from PIL import Image
+
+        from glmocr.utils.image_utils import crop_image_region
+
+        image = Image.new("RGB", (100, 100), (255, 255, 255))
+        cropped = crop_image_region(
+            image,
+            [100, 100, 900, 900],
+            polygon=[[100, 100], [900, 100], [900, 900], [100, 900]],
+        )
+
+        assert cropped.size == (80, 80)
+
+    def test_server_create_app_requires_flask_extra(self, monkeypatch):
+        """Server import error explains the optional extra."""
+        from glmocr.config import load_config
+        from glmocr import server
+
+        monkeypatch.setattr(server, "Flask", None)
+        monkeypatch.setattr(server, "_FLASK_IMPORT_ERROR", ImportError("missing flask"))
+
+        with pytest.raises(ImportError, match=r"glmocr\[server\]"):
+            server.create_app(load_config())
+
     def test_load_image_to_base64_accepts_raw_base64(self):
         """load_image_to_base64 accepts raw base64 payloads (OCRClient path)."""
         import base64
