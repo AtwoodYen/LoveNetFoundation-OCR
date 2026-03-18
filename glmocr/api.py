@@ -10,7 +10,7 @@ Two modes are supported:
 
 Agent-friendly usage::
 
-    # Only needs GLMOCR_API_KEY in environment (or pass api_key directly)
+    # Only needs ZHIPU_API_KEY in environment (or pass api_key directly)
     from glmocr import GlmOcr
 
     parser = GlmOcr(api_key="sk-xxx", mode="maas")
@@ -46,7 +46,7 @@ class GlmOcr:
         # --- Agent-friendly: zero YAML ---
         import glmocr
         parser = glmocr.GlmOcr(api_key="sk-xxx")          # MaaS auto-enabled
-        parser = glmocr.GlmOcr(mode="maas")                # uses GLMOCR_API_KEY env
+        parser = glmocr.GlmOcr(mode="maas")                # uses ZHIPU_API_KEY env
 
         # --- Classic: YAML-based ---
         parser = glmocr.GlmOcr(config_path="config.yaml")
@@ -81,7 +81,8 @@ class GlmOcr:
         """Initialize GlmOcr.
 
         All keyword arguments are optional.  When provided they override any
-        value coming from the YAML file or ``GLMOCR_*`` environment variables.
+        value coming from the YAML file or environment variables
+        (primary API key: ``ZHIPU_API_KEY``).
 
         Args:
             config_path: YAML config file path (optional).
@@ -97,9 +98,11 @@ class GlmOcr:
             env_file: Path to a ``.env`` file to load API key and other settings from.
         """
         # If an API key is available (constructor arg or env var), default to MaaS.
-        # This ensures `GlmOcr()` with GLMOCR_API_KEY in env auto-selects MaaS
+        # This ensures `GlmOcr()` with ZHIPU_API_KEY in env auto-selects MaaS
         # even when the user has an old YAML with maas.enabled=false.
-        _has_api_key = api_key is not None or bool(os.environ.get("GLMOCR_API_KEY"))
+        _has_api_key = api_key is not None or bool(
+            os.environ.get("ZHIPU_API_KEY") or os.environ.get("GLMOCR_API_KEY")
+        )
         if _has_api_key and mode is None:
             mode = "maas"
 
@@ -611,7 +614,7 @@ def parse(
 
         import glmocr
 
-        # Minimal – only needs GLMOCR_API_KEY env var
+        # Minimal – only needs ZHIPU_API_KEY env var
         results = glmocr.parse("image.png")
 
         # Explicit API key

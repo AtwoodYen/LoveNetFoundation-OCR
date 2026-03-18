@@ -83,7 +83,7 @@ pipeline:
     api_mode: openai
 
     # Authentication (for MaaS providers like Zhipu, OpenAI, etc.)
-    api_key: null # or set GLMOCR_API_KEY env var
+    api_key: null # or set ZHIPU_API_KEY env var
     headers: {} # additional HTTP headers
 
     # SSL/TLS

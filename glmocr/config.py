@@ -52,6 +52,9 @@ _ENV_MAP: Dict[str, str] = {
     "LOG_LEVEL": "logging.level",
 }
 
+PRIMARY_API_KEY_ENV = "ZHIPU_API_KEY"
+LEGACY_API_KEY_ENV = "GLMOCR_API_KEY"
+
 
 class _BaseConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -239,7 +242,7 @@ def _coerce_env_value(dotted_path: str, raw: str) -> Any:
 def _collect_env_overrides(
     env_file: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Any]:
-    """Read GLMOCR_* values from ``.env`` file + real environment variables.
+    """Read SDK env values from ``.env`` + real environment variables.
 
     Args:
         env_file: Explicit path to a ``.env`` file.  When provided, this file
@@ -248,6 +251,10 @@ def _collect_env_overrides(
 
     Priority: real ``os.environ`` > ``.env`` file.  This means a user can
     always override a ``.env`` value by exporting the variable in the shell.
+
+    API key special case:
+    - Primary: ``ZHIPU_API_KEY``
+    - Legacy fallback: ``GLMOCR_API_KEY``
     """
     # 1. Load .env file (does NOT mutate os.environ)
     if env_file is not None:
@@ -263,6 +270,19 @@ def _collect_env_overrides(
     # 2. Merge: real env > .env
     merged: Dict[str, str] = {}
     for env_suffix in _ENV_MAP:
+        if env_suffix == "API_KEY":
+            # Prefer unified env key for SDK skill, fallback to legacy key.
+            val = os.environ.get(PRIMARY_API_KEY_ENV)
+            if val is None:
+                val = os.environ.get(LEGACY_API_KEY_ENV)
+            if val is None:
+                val = dotenv_vars.get(PRIMARY_API_KEY_ENV)  # type: ignore[assignment]
+            if val is None:
+                val = dotenv_vars.get(LEGACY_API_KEY_ENV)  # type: ignore[assignment]
+            if val is not None:
+                merged[env_suffix] = val
+            continue
+
         full_key = f"{ENV_PREFIX}{env_suffix}"
         # Real env takes precedence
         val = os.environ.get(full_key)
@@ -319,8 +339,9 @@ class GlmOcrConfig(_BaseConfig):
 
         This is the **agent-friendly** entry-point.  An agent (or any
         programmatic caller) can configure the SDK entirely through keyword
-        arguments or ``GLMOCR_*`` environment variables without touching a
-        YAML file.
+        arguments or environment variables without touching a YAML file.
+        Primary API key env var is ``ZHIPU_API_KEY`` (``GLMOCR_API_KEY`` is
+        still supported as a legacy fallback).
 
         Accepted keyword overrides (a useful subset – the full YAML structure
         is also accepted via nested dicts):
@@ -340,7 +361,7 @@ class GlmOcrConfig(_BaseConfig):
         Examples::
 
             # Pure env-var driven (e.g. in a .env file)
-            #   GLMOCR_API_KEY=xxx
+            #   ZHIPU_API_KEY=xxx
             #   GLMOCR_MODE=maas
             cfg = GlmOcrConfig.from_env()
 

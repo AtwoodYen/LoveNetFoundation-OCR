@@ -10,11 +10,11 @@ metadata:
   openclaw:
     requires:
       env:
-        - GLM_OCR_API_KEY
+        - ZHIPU_API_KEY
         - GLM_OCR_TIMEOUT
       bins:
         - python
-    primaryEnv: GLM_OCR_API_KEY
+    primaryEnv: ZHIPU_API_KEY
     emoji: "📄"
     homepage: https://github.com/zai-org/GLM-OCR/tree/main/skills/glmocr
 ---
@@ -48,13 +48,13 @@ Extract text from images and PDFs using the GLM-OCR layout parsing API.
 
 ## Prerequisites
 
-- GLM_OCR_API_KEY configured (see Setup below)
+- ZHIPU_API_KEY configured (see Setup below)
 
 ## Security Notes
 
 - No runtime package installation is performed by the scripts.
 - OCR requests use the fixed official GLM endpoint and do not accept custom API URLs.
-- Only `GLM_OCR_API_KEY` (and optional timeout) is read from environment variables.
+- Only `ZHIPU_API_KEY` (and optional timeout) is read from environment variables.
 
 **⛔ MANDATORY RESTRICTIONS - DO NOT VIOLATE ⛔**
 
@@ -130,7 +130,7 @@ Key fields:
 
 **API key not configured:**
 ```
-Error: GLM_OCR_API_KEY not configured. Get your API key at: https://www.bigmodel.cn/usercenter/proj-mgmt/apikeys
+Error: ZHIPU_API_KEY not configured. Get your API key at: https://www.bigmodel.cn/usercenter/proj-mgmt/apikeys
 ```
 → Show exact error to user, guide them to configure
 

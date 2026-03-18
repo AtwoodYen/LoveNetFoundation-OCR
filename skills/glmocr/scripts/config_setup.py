@@ -92,7 +92,7 @@ def _setup_interactive() -> dict:
     print()
 
     # API Key
-    current_key = existing.get("GLM_OCR_API_KEY", "")
+    current_key = existing.get("ZHIPU_API_KEY", "")
     if current_key:
         print(f"Current API Key: {current_key[:8]}...{current_key[-4:]}")
 
@@ -106,14 +106,14 @@ def _setup_interactive() -> dict:
         print("Error: API Key is required!")
         sys.exit(1)
 
-    env_vars["GLM_OCR_API_KEY"] = api_key
+    env_vars["ZHIPU_API_KEY"] = api_key
 
     print()
     print("=" * 60)
     print("Configuration Summary:")
     print("=" * 60)
     print(
-        f"API Key: {env_vars['GLM_OCR_API_KEY'][:8]}...{env_vars['GLM_OCR_API_KEY'][-4:]}"
+        f"API Key: {env_vars['ZHIPU_API_KEY'][:8]}...{env_vars['ZHIPU_API_KEY'][-4:]}"
     )
     print()
 
@@ -131,7 +131,7 @@ def _setup_from_args(api_key: str) -> dict:
     Returns:
         Dictionary of environment variables
     """
-    env_vars = {"GLM_OCR_API_KEY": api_key}
+    env_vars = {"ZHIPU_API_KEY": api_key}
     return env_vars
 
 
@@ -145,11 +145,11 @@ def _validate_config(env_vars: dict) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    if "GLM_OCR_API_KEY" not in env_vars or not env_vars["GLM_OCR_API_KEY"]:
-        print("Error: GLM_OCR_API_KEY is required")
+    if "ZHIPU_API_KEY" not in env_vars or not env_vars["ZHIPU_API_KEY"]:
+        print("Error: ZHIPU_API_KEY is required")
         return False
 
-    api_key = env_vars["GLM_OCR_API_KEY"]
+    api_key = env_vars["ZHIPU_API_KEY"]
     if len(api_key) < 10:
         print("Warning: API key seems too short")
 

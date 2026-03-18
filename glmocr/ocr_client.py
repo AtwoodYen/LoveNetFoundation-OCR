@@ -52,7 +52,11 @@ class OCRClient:
                 f"{self.api_scheme}://{self.api_host}:{self.api_port}{self.api_path}"
             )
 
-        self.api_key = config.api_key or os.getenv("GLMOCR_API_KEY")
+        self.api_key = (
+            config.api_key
+            or os.getenv("ZHIPU_API_KEY")
+            or os.getenv("GLMOCR_API_KEY")  # legacy fallback
+        )
         self.extra_headers = config.headers or {}
 
         # API mode: "openai" or "ollama_generate"

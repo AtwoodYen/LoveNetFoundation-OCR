@@ -40,7 +40,7 @@ class MissingApiKeyError(ValueError):
     def __init__(self) -> None:
         super().__init__(
             "MaaS mode requires an API key.\n"
-            "  Option 1 (env var):  export GLMOCR_API_KEY=sk-xxx\n"
+            "  Option 1 (env var):  export ZHIPU_API_KEY=sk-xxx\n"
             "  Option 2 (CLI flag): glmocr parse image.png --api-key sk-xxx\n"
             '  Option 3 (Python):   GlmOcr(api_key="sk-xxx")\n'
             "  Get your key at:     https://open.bigmodel.cn"
@@ -114,7 +114,11 @@ class MaaSClient:
         self.model = config.model or DEFAULT_MAAS_MODEL
 
         # Authentication
-        self.api_key = config.api_key or os.getenv("GLMOCR_API_KEY")
+        self.api_key = (
+            config.api_key
+            or os.getenv("ZHIPU_API_KEY")
+            or os.getenv("GLMOCR_API_KEY")  # legacy fallback
+        )
         if not self.api_key:
             raise MissingApiKeyError()
 

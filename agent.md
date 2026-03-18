@@ -11,7 +11,7 @@ editing YAML files or understanding the internal pipeline.
 ```python
 import glmocr
 
-# One-liner — uses GLMOCR_API_KEY from environment / .env file
+# One-liner — uses ZHIPU_API_KEY from environment / .env file
 result = glmocr.parse("document.pdf")
 print(result.to_dict())
 ```
@@ -61,7 +61,7 @@ or in a `.env` file anywhere in the working-directory ancestry.
 | Variable               | Maps to                         | Example                             |
 | ---------------------- | ------------------------------- | ----------------------------------- |
 | `GLMOCR_MODE`          | `pipeline.maas.enabled`         | `maas` or `selfhosted`              |
-| `GLMOCR_API_KEY`       | `pipeline.maas.api_key`         | `sk-abc123`                         |
+| `ZHIPU_API_KEY`        | `pipeline.maas.api_key`         | `sk-abc123`                         |
 | `GLMOCR_API_URL`       | `pipeline.maas.api_url`         | `https://open.bigmodel.cn/...`      |
 | `GLMOCR_MODEL`         | `pipeline.maas.model`           | `glm-ocr`                           |
 | `GLMOCR_TIMEOUT`       | `pipeline.maas.request_timeout` | `600`                               |
@@ -81,7 +81,7 @@ Values from the `.env` file are merged with real environment variables, with
 
 ```dotenv
 # .env
-GLMOCR_API_KEY=sk-my-secret-key
+ZHIPU_API_KEY=sk-my-secret-key
 GLMOCR_MODE=maas
 GLMOCR_LOG_LEVEL=DEBUG
 ```
@@ -226,7 +226,7 @@ def ocr_tool(image_path: str) -> str:
     return result.to_json()
 ```
 
-The tool only needs `GLMOCR_API_KEY` in the environment (or `.env` file).
+The tool only needs `ZHIPU_API_KEY` in the environment (or `.env` file).
 No YAML configuration is required.
 
 ---

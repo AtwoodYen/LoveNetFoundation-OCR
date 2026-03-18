@@ -10,10 +10,10 @@ metadata:
   openclaw:
     requires:
       env:
-        - GLMOCR_API_KEY
+        - ZHIPU_API_KEY
       bins:
         - python
-    primaryEnv: GLMOCR_API_KEY
+    primaryEnv: ZHIPU_API_KEY
     emoji: "📄"
     homepage: https://github.com/zai-org/GLM-OCR/tree/main/skills/sdk
 ---
@@ -22,7 +22,7 @@ metadata:
 
 Parses documents (images, PDFs, scans) via the GLM-OCR SDK.
 
-> **📌 On-demand**: This skill requires only `GLMOCR_API_KEY` in the environment. No YAML config files or GPU needed.
+> **📌 On-demand**: This skill requires only `ZHIPU_API_KEY` in the environment. No YAML config files or GPU needed.
 
 ## ⚡ Quick Start
 
@@ -31,9 +31,9 @@ Parses documents (images, PDFs, scans) via the GLM-OCR SDK.
 pip install glmocr
 
 # Set API key (once)
-export GLMOCR_API_KEY=sk-xxx
+export ZHIPU_API_KEY=sk-xxx
 # or add to .env file in working directory:
-echo "GLMOCR_API_KEY=sk-xxx" >> .env
+echo "ZHIPU_API_KEY=sk-xxx" >> .env
 ```
 
 ```python
@@ -70,7 +70,7 @@ Agents override everything via constructor kwargs or env vars — no YAML editin
 
 | Variable               | Description                            | Example     |
 | ---------------------- | -------------------------------------- | ----------- |
-| `GLMOCR_API_KEY`       | API key (required for MaaS)            | `sk-abc123` |
+| `ZHIPU_API_KEY`        | API key (required for MaaS)            | `sk-abc123` |
 | `GLMOCR_MODEL`         | Model name                             | `glm-ocr`   |
 | `GLMOCR_TIMEOUT`       | Request timeout (seconds)              | `600`       |
 | `GLMOCR_ENABLE_LAYOUT` | Layout detection on/off                | `true`      |
@@ -98,7 +98,7 @@ results = glmocr.parse(["page1.png", "page2.png", "report.pdf"])
 from glmocr import GlmOcr
 
 parser = GlmOcr(api_key="sk-xxx")   # mode auto-set to "maas"
-parser = GlmOcr(mode="maas")        # reads GLMOCR_API_KEY from env
+parser = GlmOcr(mode="maas")        # reads ZHIPU_API_KEY from env
 
 # Always use as context manager or call .close()
 with GlmOcr(api_key="sk-xxx") as parser:
@@ -192,7 +192,7 @@ else:
 
 ## CLI Reference
 
-> **Agent-preferred interface**: use the CLI for most operations. Set `GLMOCR_API_KEY` in env once, then invoke as needed.
+> **Agent-preferred interface**: use the CLI for most operations. Set `ZHIPU_API_KEY` in env once, then invoke as needed.
 
 **Supported input formats**: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.gif`, `.webp`, `.pdf`
 
@@ -200,7 +200,7 @@ else:
 
 ```bash
 # Parse a single file → saves to ./output/<stem>/
-# MaaS mode is the default; GLMOCR_API_KEY must be set (or use --api-key)
+# MaaS mode is the default; ZHIPU_API_KEY must be set (or use --api-key)
 glmocr parse image.png
 
 # Pass API key directly without any env setup
@@ -262,7 +262,7 @@ glmocr parse image.png --log-level DEBUG
 
 | Flag              | Default    | Description                                           |
 | ----------------- | ---------- | ----------------------------------------------------- |
-| `--api-key / -k`  | env var    | API key for MaaS mode (overrides `GLMOCR_API_KEY`)    |
+| `--api-key / -k`  | env var    | API key for MaaS mode (overrides `ZHIPU_API_KEY`)     |
 | `--mode`          | `maas`     | `maas` (cloud, default) or `selfhosted` (local GPU)   |
 | `--env-file`      | auto       | Path to `.env` file (default: auto-discover from cwd) |
 | `--output / -o`   | `./output` | Output directory                                      |
@@ -345,6 +345,6 @@ output_dir/
 
 ## Common Pitfalls
 
-- **`GLMOCR_API_KEY` not set**: SDK defaults to MaaS mode. Without a key, `parse()` will fail with a clear error message and quick-fix instructions. Set via `export GLMOCR_API_KEY=sk-xxx`, add to a `.env` file, or pass `--api-key sk-xxx` to the CLI.
+- **`ZHIPU_API_KEY` not set**: SDK defaults to MaaS mode. Without a key, `parse()` will fail with a clear error message and quick-fix instructions. Set via `export ZHIPU_API_KEY=sk-xxx`, add to a `.env` file, or pass `--api-key sk-xxx` to the CLI.
 - **Large PDFs**: Default timeout is 600s. For very long documents increase with `timeout=1200`.
 - **`result.json_result` is a string**: Happens when the model returns malformed JSON. The SDK preserves the raw string — parse or log it manually.

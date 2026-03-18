@@ -61,7 +61,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
     Examples:
-    # Parse a single image (uses GLMOCR_API_KEY from environment)
+    # Parse a single image (uses ZHIPU_API_KEY from environment)
   glmocr parse image.png
 
     # Pass API key directly (no env setup needed)
@@ -133,7 +133,7 @@ def main():
         "-k",
         type=str,
         default=None,
-        help="API key for MaaS mode (overrides GLMOCR_API_KEY env var)",
+        help="API key for MaaS mode (overrides ZHIPU_API_KEY env var)",
     )
     parse_parser.add_argument(
         "--mode",
@@ -146,7 +146,7 @@ def main():
         "--env-file",
         type=str,
         default=None,
-        help="Path to .env file to load GLMOCR_API_KEY and other settings from",
+        help="Path to .env file to load ZHIPU_API_KEY and other settings from",
     )
     parse_parser.add_argument(
         "--log-level",
@@ -239,7 +239,7 @@ def main():
         logger.error(
             "%s\n\n"
             "  Quick fix:\n"
-            "    export GLMOCR_API_KEY=sk-xxx          # set once in shell\n"
+            "    export ZHIPU_API_KEY=sk-xxx           # set once in shell\n"
             "    glmocr parse image.png --api-key sk-xxx  # or pass directly\n\n"
             "  Get your free key at: https://open.bigmodel.cn",
             e,

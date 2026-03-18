@@ -101,11 +101,11 @@ def get_config() -> tuple[str, str]:
     Raises:
         ValueError: If not configured
     """
-    api_key = _get_env("GLM_OCR_API_KEY")
+    api_key = _get_env("ZHIPU_API_KEY")
 
     if not api_key:
         raise ValueError(
-            f"GLM_OCR_API_KEY not configured. Get your API key at: {API_GUIDE_URL}"
+            f"ZHIPU_API_KEY not configured. Get your API key at: {API_GUIDE_URL}"
         )
 
     # Security: use fixed official endpoint to avoid key exfiltration via custom URL.
@@ -377,7 +377,7 @@ Examples:
 
 Configuration:
   Run: python scripts/config_setup.py setup
-    Or set in .env: GLM_OCR_API_KEY
+    Or set in .env: ZHIPU_API_KEY
         """,
     )
 

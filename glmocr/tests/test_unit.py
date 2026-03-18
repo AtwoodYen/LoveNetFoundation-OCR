@@ -670,7 +670,7 @@ class TestCollectEnvOverrides:
     def test_picks_up_env_var(self, monkeypatch):
         from glmocr.config import _collect_env_overrides
 
-        monkeypatch.setenv("GLMOCR_API_KEY", "sk-env")
+        monkeypatch.setenv("ZHIPU_API_KEY", "sk-env")
         overrides = _collect_env_overrides()
         # Should produce nested dict: pipeline.maas.api_key = "sk-env"
         assert overrides["pipeline"]["maas"]["api_key"] == "sk-env"
@@ -687,10 +687,11 @@ class TestCollectEnvOverrides:
         from glmocr.config import _collect_env_overrides
 
         dotenv = tmp_path / ".env"
-        dotenv.write_text("GLMOCR_API_KEY=sk-from-dotenv\n")
+        dotenv.write_text("ZHIPU_API_KEY=sk-from-dotenv\n")
         # Patch _find_dotenv to return our temp .env
         monkeypatch.setattr("glmocr.config._find_dotenv", lambda: dotenv)
         # Make sure real env doesn't have the key
+        monkeypatch.delenv("ZHIPU_API_KEY", raising=False)
         monkeypatch.delenv("GLMOCR_API_KEY", raising=False)
 
         overrides = _collect_env_overrides()
@@ -701,9 +702,9 @@ class TestCollectEnvOverrides:
         from glmocr.config import _collect_env_overrides
 
         dotenv = tmp_path / ".env"
-        dotenv.write_text("GLMOCR_API_KEY=sk-dotenv\n")
+        dotenv.write_text("ZHIPU_API_KEY=sk-dotenv\n")
         monkeypatch.setattr("glmocr.config._find_dotenv", lambda: dotenv)
-        monkeypatch.setenv("GLMOCR_API_KEY", "sk-real")
+        monkeypatch.setenv("ZHIPU_API_KEY", "sk-real")
 
         overrides = _collect_env_overrides()
         assert overrides["pipeline"]["maas"]["api_key"] == "sk-real"
@@ -715,6 +716,7 @@ class TestCollectEnvOverrides:
         # Clear all GLMOCR_* vars
         for suffix in _ENV_MAP:
             monkeypatch.delenv(f"{ENV_PREFIX}{suffix}", raising=False)
+        monkeypatch.delenv("ZHIPU_API_KEY", raising=False)
         monkeypatch.setattr("glmocr.config._find_dotenv", lambda: None)
 
         assert _collect_env_overrides() == {}
@@ -739,7 +741,7 @@ class TestFromEnv:
         """Keyword overrides beat env vars."""
         from glmocr.config import GlmOcrConfig
 
-        monkeypatch.setenv("GLMOCR_API_KEY", "sk-env")
+        monkeypatch.setenv("ZHIPU_API_KEY", "sk-env")
         cfg = GlmOcrConfig.from_env(api_key="sk-override")
         assert cfg.pipeline.maas.api_key == "sk-override"
 
@@ -749,7 +751,7 @@ class TestFromEnv:
 
         yaml_file = tmp_path / "test.yaml"
         yaml_file.write_text("pipeline:\n  maas:\n    api_key: sk-yaml\n")
-        monkeypatch.setenv("GLMOCR_API_KEY", "sk-env")
+        monkeypatch.setenv("ZHIPU_API_KEY", "sk-env")
         monkeypatch.setattr("glmocr.config._find_dotenv", lambda: None)
 
         cfg = GlmOcrConfig.from_env(config_path=str(yaml_file))
