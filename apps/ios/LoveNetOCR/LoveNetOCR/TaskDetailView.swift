@@ -7,6 +7,8 @@ struct TaskDetailView: View {
     @State private var detail: TaskDetailPayload?
     @State private var errorText: String?
     @State private var showShareMarkdown = false
+    @State private var showShareOffering = false
+    @State private var offeringShareText: String?
     @State private var showShareXLSX = false
     @State private var xlsxURL: URL?
 
@@ -86,6 +88,11 @@ struct TaskDetailView: View {
                 ShareSheet(items: [md])
             }
         }
+        .sheet(isPresented: $showShareOffering) {
+            if let t = offeringShareText {
+                ShareSheet(items: [t])
+            }
+        }
         .sheet(isPresented: $showShareXLSX) {
             if let xlsxURL {
                 ShareSheet(items: [xlsxURL])
@@ -143,7 +150,17 @@ struct TaskDetailView: View {
     private func offeringResultSections(detail: TaskDetailPayload) -> some View {
         if let od = detail.offering_display {
             Section("辨識摘要（奉獻袋）") {
-                if !od.summary.isEmpty {
+                if let ft = od.formatted_text, !ft.isEmpty {
+                    Text(ft)
+                        .font(.body)
+                        .textSelection(.enabled)
+                    Button {
+                        offeringShareText = ft
+                        showShareOffering = true
+                    } label: {
+                        Label("分享摘要文字", systemImage: "square.and.arrow.up")
+                    }
+                } else if !od.summary.isEmpty {
                     ForEach(od.summary) { row in
                         LabeledContent(row.label) {
                             Text(row.value)

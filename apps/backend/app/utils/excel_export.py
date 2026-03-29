@@ -89,6 +89,9 @@ def build_task_excel(result_data: Dict[str, Any]) -> bytes:
 
     od = result_data.get("offering_display")
     if isinstance(od, dict):
+        ft = od.get("formatted_text")
+        if isinstance(ft, str) and ft.strip():
+            ws_meta.append(["奉獻袋摘要（多行）", ft])
         rows = od.get("summary") or od.get("fields") or []
         for row in rows:
             if isinstance(row, dict) and row.get("label") and row.get("value"):

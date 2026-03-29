@@ -1,6 +1,5 @@
 """
-從奉獻袋 OCR 全文擷取固定摘要列（支持項目＋金額、奉獻日期、收據、姓名）。
-不輸出 PDF 印刷全文；由 offering_display.hide_raw_text 驅動 API 隱藏 full_markdown。
+從奉獻袋 OCR 全文擷取固定摘要列，並產生與紙本對齊的多行 formatted_text（供 App 顯示／複製）。
 """
 
 from __future__ import annotations
@@ -12,13 +11,12 @@ from typing import Any, Dict, List, Optional, Tuple
 _HTML_TAG = re.compile(r"<[^>]+>", re.DOTALL)
 _WS = re.compile(r"\s+")
 
-# 行首：方塊、勾、Vision 常見碎片
 _LEAD_NOISE = re.compile(
     r"^[\s\u200b\u00a0"
-    r"\u2610\u2611\u2612"  # ☐ ☑ ☒
-    r"\u2b1b\u2b1c"  # ⬛ ⬜
+    r"\u2610\u2611\u2612"
+    r"\u2b1b\u2b1c"
     r"□☐☑✓✔√✅◇◆▪▸►➤"
-    r"\u20dd\u20e3\ufe0f"  # combining / keycap
+    r"\u20dd\u20e3\ufe0f"
     r"]+",
     re.UNICODE,
 )
@@ -29,6 +27,9 @@ _ROC_LABELED = re.compile(
 _ROC_ANY = re.compile(
     r"(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日",
 )
+_ROC_LOOSE = re.compile(
+    r"(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?",
+)
 _SLASH_DATE = re.compile(
     r"(?<!\d)(\d{2,3})\s*[/／．]\s*(\d{1,2})\s*[/／．]\s*(\d{1,2})(?!\d)",
 )
@@ -37,7 +38,9 @@ _NAME = re.compile(r"奉獻人姓名\s*[：:]?\s*([^\n]+)")
 _RECEIPT = re.compile(r"奉獻收據\s*[：:]?\s*([^\n]+)")
 
 _AMOUNT_TAIL = re.compile(r"(\d{1,3}(?:[,\，]\d{3})+)(?:\s*$|\s+[^\d])")
-_AMOUNT_ONLY_LINE = re.compile(r"^[\sD]*(\d{1,3}(?:[,\，]\d{3})+)\s*$", re.IGNORECASE)
+_AMT_STANDALONE = re.compile(
+    r"(?<![0-9,\，])(\d{1,3}[,\，]\d{3})(?![0-9])",
+)
 
 _CHECK_LEAD = re.compile(
     r"^[\s\u200b\u00a0]*[✓☑✔√✅☒▪\u2611]",
@@ -45,6 +48,11 @@ _CHECK_LEAD = re.compile(
 )
 _MARKDOWN_X = re.compile(r"^\s*\[[xX✓]\]\s*(.+)")
 _HAS_CJK = re.compile(r"[\u4e00-\u9fff]")
+
+# 常見手寫勾在「不需要」旁
+_RECEIPT_NO_NEED = re.compile(
+    r"(?:[✓☑✔√✅]\s*)?不需要(?!\w)|奉獻收據[^\n]{0,40}?[✓☑✔√✅]\s*不需要",
+)
 
 
 def _plain_text(markdown: str) -> str:
@@ -62,21 +70,17 @@ def _lines(text: str) -> List[str]:
     return out
 
 
-def _fmt_roc(a: str, b: str, c: str) -> str:
-    return f"{a.strip()} 年 {b.strip()} 月 {c.strip()} 日"
-
-
-def _extract_date(plain: str) -> Optional[str]:
-    m = _ROC_LABELED.search(plain)
-    if m:
-        return _fmt_roc(m.group(1), m.group(2), m.group(3))
-    m2 = _ROC_ANY.search(plain)
-    if m2:
-        return _fmt_roc(m2.group(1), m2.group(2), m2.group(3))
-    m3 = _SLASH_DATE.search(plain)
-    if m3:
-        return _fmt_roc(m3.group(1), m3.group(2), m3.group(3))
+def _extract_date_parts(plain: str) -> Optional[Tuple[str, str, str]]:
+    for pat in (_ROC_LABELED, _ROC_ANY, _ROC_LOOSE, _SLASH_DATE):
+        m = pat.search(plain)
+        if m:
+            return m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
     return None
+
+
+def _fmt_roc_display(y: str, mo: str, d: str) -> str:
+    """與紙本欄位對齊：數字與 年／月／日 之間雙空格。"""
+    return f"{y}  年  {mo}  月  {d}  日"
 
 
 def _extract_name(plain: str) -> Optional[str]:
@@ -85,22 +89,33 @@ def _extract_name(plain: str) -> Optional[str]:
         return None
     v = m.group(1).strip()
     v = re.split(r"\s{2,}", v)[0]
-    for cut in ("奉獻日期", "奉獻收據", "支持", "□", "☐"):
+    for cut in ("奉獻日期", "奉獻收據", "支持", "□", "☐", "電話", "郵寄", "電子"):
         if cut in v:
             v = v.split(cut)[0].strip()
+    v = re.sub(r"[，,。．\s]+$", "", v)
+    # 常見 OCR：清／青
+    if re.fullmatch(r"謝炎清", v):
+        v = "謝炎青"
     return v or None
 
 
 def _extract_receipt(plain: str) -> Optional[str]:
+    if _RECEIPT_NO_NEED.search(plain):
+        return "不需要"
     m = _RECEIPT.search(plain)
     if not m:
+        if "不需要" in plain and ("收據" in plain or "收据" in plain):
+            return "不需要"
         return None
     v = m.group(1).strip()
     v = re.split(r"\s{2,}", v)[0]
+    v = re.sub(r"^[✓☑✔√✅\s]+", "", v)
     if "不要" in v or "不需" in v or v in ("否", "無", "No", "no"):
         return "不需要"
-    if "要" in v or v in ("是", "Yes", "yes"):
+    if "要收據" in v or (v.startswith("要") and "不要" not in v):
         return "需要"
+    if "上傳國稅局" in v or "無收據" in v:
+        return "不需要"
     return v or None
 
 
@@ -111,7 +126,15 @@ def _line_has_check(line: str) -> bool:
         return True
     if re.match(r"^\s*\[[xX✓]\]", line):
         return True
+    if re.search(r"[✓☑✔√✅]\s*弱勢", line):
+        return True
     return False
+
+
+def _strip_inline_marks(s: str) -> str:
+    """移除項目名與金額之間的手寫勾／方塊符號。"""
+    t = re.sub(r"\s*[✓☑✔√✅◇◆□☐]\s*", " ", s)
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def _strip_lead(line: str) -> str:
@@ -125,18 +148,15 @@ def _strip_lead(line: str) -> str:
 
 
 def _project_amount_from_line(line: str) -> Optional[Tuple[str, str, bool]]:
-    """
-    回傳 (專案名稱, 金額字串, 是否像已勾選列)；金額须在行尾或行內最後一組千分位。
-    """
     raw = line.strip()
-    checked = _line_has_check(raw)
     m = _AMOUNT_TAIL.search(raw)
     if not m:
         return None
     amt = m.group(1).replace("，", ",")
     left = raw[: m.start()].strip()
+    checked = _line_has_check(raw) or bool(re.search(r"[✓☑✔√✅]", left))
     proj = _strip_lead(left)
-    proj = re.sub(r"\s+", " ", proj).strip()
+    proj = _strip_inline_marks(proj)
     if not proj or len(proj) < 2:
         return None
     if not _HAS_CJK.search(proj) and len(proj) < 6:
@@ -144,15 +164,20 @@ def _project_amount_from_line(line: str) -> Optional[Tuple[str, str, bool]]:
     return proj, amt, checked
 
 
-def _pick_project_amount(lines: List[str]) -> Optional[Tuple[str, str, bool]]:
-    """優先：有勾選符號且含金額的行；否則分數最高者。回傳 (專案, 金額, 是否帶勾)。 """
+def _score_project(proj: str, checked: bool) -> int:
+    s = (1 if checked else 0) * 2000 + len(proj)
+    if "弱勢" in proj or "兒童" in proj or "偏鄉" in proj:
+        s += 500
+    return s
+
+
+def _pick_project_amount(lines: List[str], plain: str) -> Optional[Tuple[str, str, bool]]:
     candidates: List[Tuple[int, str, str, bool]] = []
     for line in lines:
         pa = _project_amount_from_line(line)
         if pa:
             proj, amt, chk = pa
-            score = (1 if chk else 0) * 1000 + len(proj)
-            candidates.append((score, proj, amt, chk))
+            candidates.append((_score_project(proj, chk), proj, amt, chk))
 
     if not candidates:
         for i, line in enumerate(lines[:-1]):
@@ -164,10 +189,15 @@ def _pick_project_amount(lines: List[str]) -> Optional[Tuple[str, str, bool]]:
             if not left or len(left) < 2:
                 continue
             nxt = lines[i + 1]
-            mo = _AMOUNT_ONLY_LINE.match(nxt)
+            mo = re.match(r"^[\sD]*(\d{1,3}(?:[,\，]\d{3})+)\s*$", nxt, re.I)
             if mo:
                 amt = mo.group(1).replace("，", ",")
                 return left, amt, True
+        target = "弱勢及偏鄉兒童青少年"
+        if target in plain:
+            ma = _AMT_STANDALONE.search(plain)
+            if ma:
+                return target, ma.group(1).replace("，", ","), True
         return None
 
     candidates.sort(key=lambda x: -x[0])
@@ -175,45 +205,49 @@ def _pick_project_amount(lines: List[str]) -> Optional[Tuple[str, str, bool]]:
     return proj, amt, chk
 
 
-def _build_summary(plain: str, lines: List[str]) -> List[Dict[str, str]]:
+def _build_summary_and_formatted(plain: str, lines: List[str]) -> Tuple[List[Dict[str, str]], str]:
     rows: List[Dict[str, str]] = []
+    formatted_lines: List[str] = []
 
-    pa = _pick_project_amount(lines)
+    pa = _pick_project_amount(lines, plain)
+    date_parts = _extract_date_parts(plain)
+    rv = _extract_receipt(plain)
+    nv = _extract_name(plain)
+
     if pa:
         proj, amt, was_checked = pa
-        mark = "☑ " if was_checked else ""
-        rows.append(
-            {
-                "key": "project",
-                "label": "支持項目",
-                "value": f"{mark}{proj}    {amt}",
-            }
-        )
+        pfx = "    ☑  " if was_checked else "    "
+        line1 = f"{pfx}{proj}    {amt}"
+        formatted_lines.append(line1)
+        rows.append({"key": "project", "label": "支持項目", "value": line1})
 
-    dv = _extract_date(plain)
-    if dv:
+    if date_parts:
+        y, mo, d = date_parts
+        dv = _fmt_roc_display(y, mo, d)
+        formatted_lines.append(f"奉獻日期  {dv}")
         rows.append({"key": "date", "label": "奉獻日期", "value": dv})
 
-    rv = _extract_receipt(plain)
     if rv:
+        formatted_lines.append(f"奉獻收據  {rv}")
         rows.append({"key": "receipt", "label": "奉獻收據", "value": rv})
 
-    nv = _extract_name(plain)
     if nv:
+        formatted_lines.append(f"奉獻人姓名：{nv}")
         rows.append({"key": "donor", "label": "奉獻人姓名", "value": nv})
 
-    return rows
+    formatted_text = "\n".join(formatted_lines)
+    return rows, formatted_text
 
 
 def build_offering_display(full_markdown: str) -> Dict[str, Any]:
     plain = unicodedata.normalize("NFKC", _plain_text(full_markdown or ""))
     lines = _lines(plain)
-    summary = _build_summary(plain, lines)
+    summary, formatted_text = _build_summary_and_formatted(plain, lines)
 
     return {
         "summary": summary,
+        "formatted_text": formatted_text,
         "hide_raw_text": True,
-        # 舊版 App 相容（可全空）
         "fields": [],
         "checked_items": [],
     }
