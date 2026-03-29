@@ -1,0 +1,69 @@
+import Foundation
+
+// MARK: - API envelope
+
+struct APIEnvelope<T: Decodable>: Decodable {
+    let success: Bool
+    let data: T?
+    let message: String?
+    let error_code: String?
+}
+
+// MARK: - System
+
+struct SystemHealthPayload: Decodable {
+    let status: String
+    let task_manager_running: Bool?
+    let workers_count: Int?
+    let active_workers: Int?
+    let version: String?
+    let error: String?
+}
+
+// MARK: - Tasks
+
+struct TaskSubmitPayload: Decodable {
+    let task_id: String
+    let document_id: String
+    let status: String
+    let processing_mode: String
+    let priority: Int
+    let created_at: String?
+}
+
+struct TaskSummaryPayload: Decodable {
+    let task_id: String
+    let document_id: String
+    let original_filename: String?
+    let status: String
+    let progress: Double?
+    let current_step: String?
+    let created_at: String?
+    let started_at: String?
+    let completed_at: String?
+    let processing_mode: String?
+    let priority: Int?
+}
+
+struct TaskListDataPayload: Decodable {
+    let tasks: [TaskSummaryPayload]
+    let total: Int
+    let limit: Int
+    let offset: Int
+}
+
+/// 任務詳情（僅解碼畫面所需欄位；其餘 JSON 鍵可忽略）
+struct TaskDetailPayload: Decodable {
+    let task_id: String
+    let document_id: String?
+    let status: String
+    let progress: Double?
+    let current_step: String?
+    let created_at: String?
+    let started_at: String?
+    let completed_at: String?
+    let error_message: String?
+    let processing_mode: String?
+    let priority: Int?
+    let full_markdown: String?
+}
