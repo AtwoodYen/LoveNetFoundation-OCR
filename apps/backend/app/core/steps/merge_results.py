@@ -10,6 +10,7 @@ import os
 from app.core.flows.base import ProcessingContext
 from app.utils.json_safe import json_sanitize
 from app.utils.logger import logger
+from app.utils.offering_display import build_offering_display
 
 
 class MergeResultsStepInput:
@@ -128,6 +129,13 @@ async def _merge_to_markdown(
         await progress_callback(progress, f"Merging page {i + 1}/{total_pages}")
     result["full_markdown"] = "".join(markdown_lines)
     result["layout"] = merge_res_layout
+
+    ft = (context.metadata or {}).get("form_template") or (
+        context.ocr_config or {}
+    ).get("form_template")
+    if ft == "offering_envelope":
+        result["offering_display"] = build_offering_display(result["full_markdown"])
+
     # 写入文件
     md_output_path = str(Path(output_dir) / "result.md")
     with open(md_output_path, "w", encoding="utf-8") as f:

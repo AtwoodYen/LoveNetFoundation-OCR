@@ -4,14 +4,15 @@
   "reference_pdf": "愛網全人關懷協會奉獻袋.pdf",
   "description": "印刷表頭可略過；裁切手寫區後再以 ink_filter 只保留藍／黑筆跡（黑字白底）送 OCR。座標為 0–1 歸一化，可依掃描調整。",
   "ink_filter": {
-    "enabled": true
+    "enabled": true,
+    "dark_v_max": 172
   },
   "default_page_regions": [
     {
-      "x0": 0.05,
-      "y0": 0.48,
-      "x1": 0.95,
-      "y1": 0.96,
+      "x0": 0.04,
+      "y0": 0.36,
+      "x1": 0.96,
+      "y1": 0.97,
       "label": "handwriting_block"
     }
   ]

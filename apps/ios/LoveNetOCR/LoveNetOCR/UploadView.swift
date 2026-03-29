@@ -88,11 +88,15 @@ struct UploadView: View {
                         .keyboardType(.URL)
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
-                    Toggle("奉獻袋：只辨識手寫區", isOn: $useOfferingEnvelopeCrop)
-                    Text("依伺服器範本裁切下半部手寫區再送 OCR，略過固定印刷表頭。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
+                Toggle("奉獻袋表單", isOn: $useOfferingEnvelopeCrop)
+                Text(
+                    useDeviceOCR
+                        ? "任務完成後以奉獻袋規則擷取金額、日期、勾選項（僅顯示有辨識到的欄位）。"
+                        : "後端裁切手寫區、藍黑筆跡濾波後再送版面 OCR；結果同樣以奉獻袋摘要顯示。"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             } header: {
                 Text("選項")
             }
@@ -256,7 +260,7 @@ struct UploadView: View {
         defer { isUploading = false }
         do {
             let mode = clientMarkdown != nil ? "client_vision" : "pipeline"
-            let formTpl: String? = (!useDeviceOCR && useOfferingEnvelopeCrop) ? "offering_envelope" : nil
+            let formTpl: String? = useOfferingEnvelopeCrop ? "offering_envelope" : nil
             let payload = try await env.client.uploadTask(
                 fileURL: fileURL,
                 processingMode: mode,

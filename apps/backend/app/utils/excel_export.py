@@ -87,6 +87,15 @@ def build_task_excel(result_data: Dict[str, Any]) -> bytes:
     ws_meta.append(["總頁數", meta.get("total_pages", "")])
     ws_meta.append(["區塊數", len(layout)])
 
+    od = result_data.get("offering_display")
+    if isinstance(od, dict):
+        for row in od.get("fields") or []:
+            if isinstance(row, dict) and row.get("label") and row.get("value"):
+                ws_meta.append([row.get("label", ""), row.get("value", "")])
+        for item in od.get("checked_items") or []:
+            if item:
+                ws_meta.append(["勾選項目", str(item)])
+
     for row in ws_all.iter_rows(min_row=2, max_col=4):
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical="top")

@@ -52,6 +52,29 @@ struct TaskListDataPayload: Decodable {
     let offset: Int
 }
 
+struct OfferingFieldPayload: Decodable, Identifiable {
+    let key: String
+    let label: String
+    let value: String
+    var id: String { key }
+}
+
+struct OfferingDisplayPayload: Decodable {
+    let fields: [OfferingFieldPayload]
+    let checked_items: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case fields
+        case checked_items
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fields = try c.decodeIfPresent([OfferingFieldPayload].self, forKey: .fields) ?? []
+        checked_items = try c.decodeIfPresent([String].self, forKey: .checked_items) ?? []
+    }
+}
+
 /// 任務詳情（僅解碼畫面所需欄位；其餘 JSON 鍵可忽略）
 struct TaskDetailPayload: Decodable {
     let task_id: String
@@ -66,4 +89,5 @@ struct TaskDetailPayload: Decodable {
     let processing_mode: String?
     let priority: Int?
     let full_markdown: String?
+    let offering_display: OfferingDisplayPayload?
 }
