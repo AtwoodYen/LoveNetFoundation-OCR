@@ -45,6 +45,16 @@ class PipelineFlow(TaskProcessingFlow):
 
         # 步骤1: PDF转图片 (0-20%)
         pdf_result = await self._step_pdf_to_image()
+        # 表單範本：僅裁切手寫區再送 OCR（略過印刷表頭；僅 pipeline 模式）
+        template_id = (self.context.ocr_config or {}).get("form_template")
+        if template_id and self.context.processing_mode == "pipeline":
+            from app.utils.form_template import apply_form_template_to_pdf_result
+
+            pdf_result = apply_form_template_to_pdf_result(
+                pdf_result,
+                str(template_id).strip(),
+                self.context.get_output_dir() or "",
+            )
         self.context.set("pdf_result", pdf_result)
         self.context.set("metadata", pdf_result.get("metadata"))
         self.context.metadata = pdf_result.get("metadata")

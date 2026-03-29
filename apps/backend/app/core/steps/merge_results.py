@@ -8,6 +8,7 @@ import json
 import os
 
 from app.core.flows.base import ProcessingContext
+from app.utils.json_safe import json_sanitize
 from app.utils.logger import logger
 
 
@@ -96,7 +97,7 @@ async def _merge_to_markdown(
 
     markdown_lines = []
     result = {}
-    result["metadata"] = context.metadata
+    result["metadata"] = json_sanitize(context.metadata or {})
     merge_res_layout = []
     total_pages = len(pages)
     for i, page in enumerate(pages):
@@ -133,6 +134,6 @@ async def _merge_to_markdown(
         f.writelines(markdown_lines)
     json_output_path = str(Path(output_dir) / "merged.json")
     with open(json_output_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+        json.dump(json_sanitize(result), f, ensure_ascii=False, indent=2)
 
     return md_output_path, json_output_path

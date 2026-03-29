@@ -301,7 +301,9 @@ class TaskRepository(BaseRepository[Task]):
             update_data["result_file_path"] = result_file_path
 
         if result is not None:
-            update_data["result"] = result
+            from app.utils.json_safe import json_sanitize
+
+            update_data["result"] = json_sanitize(result)
 
         # 设置时间戳
         if status == TaskStatus.PROCESSING:

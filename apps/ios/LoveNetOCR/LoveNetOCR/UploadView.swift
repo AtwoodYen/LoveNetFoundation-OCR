@@ -12,6 +12,8 @@ struct UploadView: View {
     @State private var customOCRURL = ""
     /// 預設開啟：用 Apple Vision 在裝置辨識，後端不再呼叫 GLM-OCR 服務（免 API Key）。
     @State private var useDeviceOCR = true
+    /// 後端 pipeline 時裁切奉獻袋印刷區，只對手寫區做版面 OCR。
+    @State private var useOfferingEnvelopeCrop = false
     @State private var isUploading = false
     @State private var alertMessage: String?
     @State private var submittedTaskId: String?
@@ -86,6 +88,10 @@ struct UploadView: View {
                         .keyboardType(.URL)
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
+                    Toggle("奉獻袋：只辨識手寫區", isOn: $useOfferingEnvelopeCrop)
+                    Text("依伺服器範本裁切下半部手寫區再送 OCR，略過固定印刷表頭。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("選項")
@@ -250,13 +256,15 @@ struct UploadView: View {
         defer { isUploading = false }
         do {
             let mode = clientMarkdown != nil ? "client_vision" : "pipeline"
+            let formTpl: String? = (!useDeviceOCR && useOfferingEnvelopeCrop) ? "offering_envelope" : nil
             let payload = try await env.client.uploadTask(
                 fileURL: fileURL,
                 processingMode: mode,
                 priority: priority,
                 outputFormat: "markdown",
                 customOCRURL: useDeviceOCR ? nil : (customOCRURL.isEmpty ? nil : customOCRURL),
-                clientMarkdown: clientMarkdown
+                clientMarkdown: clientMarkdown,
+                formTemplate: formTpl
             )
             submittedTaskId = payload.task_id
             alertMessage = "已建立任務，可至「任務」分頁查看進度。"

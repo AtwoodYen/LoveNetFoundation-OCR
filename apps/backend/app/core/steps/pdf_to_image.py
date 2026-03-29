@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 
 from app.core.flows.base import ProcessingContext
+from app.utils.json_safe import json_sanitize
 from app.utils.logger import logger
 from app.utils.converters import FileConverterService
 
@@ -90,7 +91,7 @@ async def pdf_to_image(
 
         output_files = result["output_files"]
         page_count = result["page_count"]
-        metadata = result["metadata"]
+        metadata = json_sanitize(result["metadata"])
 
         # 保存转换信息到JSON文件
         json_output_path = os.path.join(images_output_dir, "conversion_info.json")
@@ -106,7 +107,9 @@ async def pdf_to_image(
 
         try:
             with open(json_output_path, "w", encoding="utf-8") as f:
-                json.dump(conversion_info, f, ensure_ascii=False, indent=2)
+                json.dump(
+                    json_sanitize(conversion_info), f, ensure_ascii=False, indent=2
+                )
             logger.info(f"Conversion info saved to: {json_output_path}")
         except Exception as e:
             logger.error(f"Failed to save conversion info JSON: {str(e)}")

@@ -6,6 +6,11 @@ from typing import Literal, Optional
 from pathlib import Path
 
 
+def _default_assets_dir() -> str:
+    """apps/assets（與 backend 同屬 apps 下）"""
+    return str((Path(__file__).resolve().parents[3] / "assets").resolve())
+
+
 class Settings(BaseSettings):
     """应用配置"""
 
@@ -21,6 +26,9 @@ class Settings(BaseSettings):
 
     # 输出目录
     OUTPUT_DIR: str = "./data"
+
+    # 靜態資源（表單範本 JSON、參考 PDF 等）
+    ASSETS_DIR: str = _default_assets_dir()
 
     # 版面 / OCR 推論服務（與本 API 分離；Worker 會對此 URL 送 POST）
     # 環境變數：LAYOUT_OCR_URL；未啟動該服務時會出現 connection failed

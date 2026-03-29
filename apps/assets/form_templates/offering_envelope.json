@@ -1,0 +1,15 @@
+{
+  "id": "offering_envelope",
+  "label": "愛網全人關懷協會奉獻袋",
+  "reference_pdf": "愛網全人關懷協會奉獻袋.pdf",
+  "description": "印刷表頭可略過；以下為相對於整頁的歸一化座標 (0–1)，僅裁切這些區塊做版面 OCR。可依實際掃描調整。",
+  "default_page_regions": [
+    {
+      "x0": 0.05,
+      "y0": 0.48,
+      "x1": 0.95,
+      "y1": 0.96,
+      "label": "handwriting_block"
+    }
+  ]
+}

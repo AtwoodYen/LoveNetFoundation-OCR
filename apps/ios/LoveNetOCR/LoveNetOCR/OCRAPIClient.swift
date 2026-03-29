@@ -127,7 +127,8 @@ final class OCRAPIClient {
         priority: Int = 2,
         outputFormat: String = "markdown",
         customOCRURL: String? = nil,
-        clientMarkdown: String? = nil
+        clientMarkdown: String? = nil,
+        formTemplate: String? = nil
     ) async throws -> TaskSubmitPayload {
         guard fileURL.isFileURL else { throw OCRAPIError.uploadReadFailed }
         let fileData: Data
@@ -176,6 +177,12 @@ final class OCRAPIClient {
             append("Content-Disposition: form-data; name=\"client_markdown\"\r\n\r\n")
             body.append(Data(cm.utf8))
             append("\r\n")
+        }
+
+        if let ft = formTemplate?.trimmingCharacters(in: .whitespacesAndNewlines), !ft.isEmpty {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"form_template\"\r\n\r\n")
+            append("\(ft)\r\n")
         }
 
         append("--\(boundary)--\r\n")

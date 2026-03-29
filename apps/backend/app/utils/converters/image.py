@@ -14,6 +14,29 @@ from app.utils.converters.exceptions import ConversionFailedError
 from app.utils.logger import logger
 
 
+def _dpi_pair(raw) -> tuple:
+    """將 PIL info['dpi'] 轉成可 JSON 的 float 元組（含 IFDRational、單一數值）。"""
+
+    def _one(v):
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    if raw is None:
+        return (None, None)
+    if isinstance(raw, (tuple, list)):
+        if not raw:
+            return (None, None)
+        a = _one(raw[0])
+        b = _one(raw[1]) if len(raw) > 1 else a
+        return (a, b)
+    x = _one(raw)
+    return (x, x)
+
+
 class ImageConverter(BaseConverter):
     """图片格式转换器（统一转换为PNG）"""
 
@@ -49,8 +72,9 @@ class ImageConverter(BaseConverter):
 
                 logger.info(f"图片尺寸: {width}x{height}, 原始格式: {original_format}")
 
-                # 获取DPI信息
-                dpi_info = getattr(img, "info", {}).get("dpi", (None, None))
+                # 获取DPI信息（转换为普通Python类型，避免IFDRational无法JSON序列化）
+                raw_dpi = getattr(img, "info", {}).get("dpi")
+                dpi_info = _dpi_pair(raw_dpi)
 
                 page_size = {
                     "width": width,

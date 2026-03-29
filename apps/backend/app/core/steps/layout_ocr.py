@@ -10,6 +10,7 @@ import httpx
 import base64
 import os
 from app.core.flows.base import ProcessingContext
+from app.utils.json_safe import json_sanitize
 from app.utils.config import settings
 from app.utils.image_processer import crop_image_by_bbox_to_path, vlm_bbox_convert
 from app.utils.logger import logger
@@ -189,7 +190,9 @@ async def _call_ocr_service(
 
     try:
         with open(ocr_result_file, "w", encoding="utf-8") as f:
-            json.dump(ocr_result_data, f, ensure_ascii=False, indent=2)
+            json.dump(
+                json_sanitize(ocr_result_data), f, ensure_ascii=False, indent=2
+            )
         logger.info(f"OCR results saved to: {ocr_result_file}")
     except Exception as e:
         logger.error(f"Failed to save OCR results: {e}")

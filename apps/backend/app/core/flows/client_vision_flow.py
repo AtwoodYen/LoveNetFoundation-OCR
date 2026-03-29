@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 from app.core.flows.pipeline_flow import PipelineFlow
+from app.utils.json_safe import json_sanitize
 from app.utils.logger import logger
 
 
@@ -79,7 +80,9 @@ class ClientVisionFlow(PipelineFlow):
             "ref_image_paths": [],
         }
         with open(ocr_result_file, "w", encoding="utf-8") as f:
-            json.dump(ocr_result_data, f, ensure_ascii=False, indent=2)
+            json.dump(
+                json_sanitize(ocr_result_data), f, ensure_ascii=False, indent=2
+            )
 
         await self.update_progress(
             step_name=step_name,

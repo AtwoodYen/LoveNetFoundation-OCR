@@ -6,7 +6,7 @@ import json
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from datetime import datetime, UTC
 
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Response
@@ -38,6 +38,10 @@ async def submit_task(
         None,
         description="client_vision 模式：客戶端已辨識的文字（如 iOS Vision）",
     ),
+    form_template: Optional[str] = Form(
+        None,
+        description="表單範本 id（如 offering_envelope）；僅 pipeline 會裁切手寫區再送版面 OCR",
+    ),
     output_format: str = Form("markdown"),
 ):
     """
@@ -55,7 +59,7 @@ async def submit_task(
         document_id = str(uuid.uuid4())
         task_id = str(uuid.uuid4())
 
-        parsed_ocr_config = None
+        parsed_ocr_config: Optional[Dict[str, Any]] = None
         if processing_mode == "client_vision":
             text = (client_markdown or "").strip()
             if not text:
@@ -66,6 +70,12 @@ async def submit_task(
             parsed_ocr_config = {"client_markdown": text}
         elif custom_url is not None and str(custom_url).strip():
             parsed_ocr_config = {"custom_url": str(custom_url).strip()}
+
+        ft = (form_template or "").strip()
+        if ft:
+            if parsed_ocr_config is None:
+                parsed_ocr_config = {}
+            parsed_ocr_config["form_template"] = ft
 
         # 保存文件
         save_dir = str(Path(settings.OUTPUT_DIR) / task_id)
