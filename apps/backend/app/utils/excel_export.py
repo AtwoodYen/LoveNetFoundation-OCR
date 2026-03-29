@@ -89,7 +89,8 @@ def build_task_excel(result_data: Dict[str, Any]) -> bytes:
 
     od = result_data.get("offering_display")
     if isinstance(od, dict):
-        for row in od.get("fields") or []:
+        rows = od.get("summary") or od.get("fields") or []
+        for row in rows:
             if isinstance(row, dict) and row.get("label") and row.get("value"):
                 ws_meta.append([row.get("label", ""), row.get("value", "")])
         for item in od.get("checked_items") or []:

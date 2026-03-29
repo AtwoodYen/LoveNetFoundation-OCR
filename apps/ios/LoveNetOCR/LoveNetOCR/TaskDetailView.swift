@@ -31,33 +31,17 @@ struct TaskDetailView: View {
 
                     offeringResultSections(detail: detail)
 
-                    if let md = detail.full_markdown, !md.isEmpty {
-                        let hasStructured = detail.offering_display.map {
-                            !$0.fields.isEmpty || !$0.checked_items.isEmpty
-                        } ?? false
-                        if hasStructured {
-                            Section {
-                                DisclosureGroup("檢視原始辨識全文") {
-                                    Text(md)
-                                        .font(.body)
-                                        .textSelection(.enabled)
-                                    Button {
-                                        showShareMarkdown = true
-                                    } label: {
-                                        Label("分享文字", systemImage: "square.and.arrow.up")
-                                    }
-                                }
-                            }
-                        } else {
-                            Section("辨識結果（Markdown）") {
-                                Text(md)
-                                    .font(.body)
-                                    .textSelection(.enabled)
-                                Button {
-                                    showShareMarkdown = true
-                                } label: {
-                                    Label("分享文字", systemImage: "square.and.arrow.up")
-                                }
+                    if let md = detail.full_markdown, !md.isEmpty,
+                       detail.offering_display?.hide_raw_text != true
+                    {
+                        Section("辨識結果（Markdown）") {
+                            Text(md)
+                                .font(.body)
+                                .textSelection(.enabled)
+                            Button {
+                                showShareMarkdown = true
+                            } label: {
+                                Label("分享文字", systemImage: "square.and.arrow.up")
                             }
                         }
                     }
@@ -154,36 +138,28 @@ struct TaskDetailView: View {
         }
     }
 
-    /// 有奉獻袋結構化結果時，主畫面只顯示有資料的欄位與勾選項，不逐行列出等同 PDF 的空欄標題。
+    /// 奉獻袋任務僅顯示擷取之摘要列，不顯示 PDF 印刷全文（後端 hide_raw_text + 不帶 full_markdown）。
     @ViewBuilder
     private func offeringResultSections(detail: TaskDetailPayload) -> some View {
         if let od = detail.offering_display {
-            let hasAny = !od.fields.isEmpty || !od.checked_items.isEmpty
-            if hasAny {
-                Section("辨識摘要（奉獻袋）") {
-                    ForEach(od.fields) { f in
-                        LabeledContent(f.label) {
-                            Text(f.value)
+            Section("辨識摘要（奉獻袋）") {
+                if !od.summary.isEmpty {
+                    ForEach(od.summary) { row in
+                        LabeledContent(row.label) {
+                            Text(row.value)
                                 .multilineTextAlignment(.trailing)
                         }
                     }
-                    if !od.checked_items.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("勾選項目")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            ForEach(Array(od.checked_items.enumerated()), id: \.offset) { _, item in
-                                Label(item, systemImage: "checkmark.square.fill")
-                            }
-                        }
-                        .padding(.vertical, 4)
+                } else if !od.checked_items.isEmpty {
+                    ForEach(Array(od.checked_items.enumerated()), id: \.offset) { _, item in
+                        Label(item, systemImage: "checkmark.square.fill")
                     }
-                }
-            } else {
-                Section("辨識摘要（奉獻袋）") {
-                    Text("尚未從文字中自動擷取金額、日期或勾選列，請查看下方原始全文。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                } else {
+                    Text(
+                        "目前無法從照片辨識出項目、金額、日期、收據或姓名。請對焦手寫區、避免反光，並確認上傳時已開啟「奉獻袋表單」。"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
             }
         }

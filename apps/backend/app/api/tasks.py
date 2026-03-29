@@ -313,7 +313,10 @@ async def get_task_status(task_id: str):
             response_data["metadata"]= result_data.get("metadata")
             response_data["full_markdown"] = result_data.get("full_markdown")
             response_data["layout"] = result_data.get("layout")
-            response_data["offering_display"] = result_data.get("offering_display")
+            od = result_data.get("offering_display")
+            response_data["offering_display"] = od
+            if isinstance(od, dict) and od.get("hide_raw_text"):
+                response_data["full_markdown"] = None
 
         return ApiResponse(
             success=True,

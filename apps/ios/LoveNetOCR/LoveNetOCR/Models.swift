@@ -60,18 +60,28 @@ struct OfferingFieldPayload: Decodable, Identifiable {
 }
 
 struct OfferingDisplayPayload: Decodable {
-    let fields: [OfferingFieldPayload]
+    /// 後端擷取之摘要列（支持項目、奉獻日期、收據、姓名等）
+    let summary: [OfferingFieldPayload]
+    let hide_raw_text: Bool
+    /// 舊版 API 相容
     let checked_items: [String]
 
     enum CodingKeys: String, CodingKey {
+        case summary
+        case hide_raw_text
         case fields
         case checked_items
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        fields = try c.decodeIfPresent([OfferingFieldPayload].self, forKey: .fields) ?? []
+        hide_raw_text = try c.decodeIfPresent(Bool.self, forKey: .hide_raw_text) ?? false
         checked_items = try c.decodeIfPresent([String].self, forKey: .checked_items) ?? []
+        var s = try c.decodeIfPresent([OfferingFieldPayload].self, forKey: .summary) ?? []
+        if s.isEmpty {
+            s = try c.decodeIfPresent([OfferingFieldPayload].self, forKey: .fields) ?? []
+        }
+        summary = s
     }
 }
 
