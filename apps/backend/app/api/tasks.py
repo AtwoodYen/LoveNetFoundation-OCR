@@ -33,7 +33,11 @@ async def submit_task(
     file: UploadFile = File(..., description="要处理的文件"),
     processing_mode: str = Form("pipeline"),
     priority: int = Form(2, description="1=低,2=正常,3=高,4=紧急"),
-    custom_url : str = Form(None, description=""),
+    custom_url: str = Form(None, description=""),
+    client_markdown: Optional[str] = Form(
+        None,
+        description="client_vision 模式：客戶端已辨識的文字（如 iOS Vision）",
+    ),
     output_format: str = Form("markdown"),
 ):
     """
@@ -52,7 +56,15 @@ async def submit_task(
         task_id = str(uuid.uuid4())
 
         parsed_ocr_config = None
-        if custom_url is not None and str(custom_url).strip():
+        if processing_mode == "client_vision":
+            text = (client_markdown or "").strip()
+            if not text:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="client_vision 模式必須提供非空的 client_markdown（請於手機端先辨識文字）",
+                )
+            parsed_ocr_config = {"client_markdown": text}
+        elif custom_url is not None and str(custom_url).strip():
             parsed_ocr_config = {"custom_url": str(custom_url).strip()}
 
         # 保存文件
