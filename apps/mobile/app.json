@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "GLM-OCR",
+    "slug": "glm-ocr-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#1a1a2e"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.glmocr.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow GLM-OCR to use your camera for document scanning.",
+        "NSPhotoLibraryUsageDescription": "Allow GLM-OCR to access your photos for OCR processing."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "com.glmocr.mobile",
+      "permissions": ["CAMERA"],
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow GLM-OCR to use your camera for document scanning."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GLM-OCR to access your photos for OCR processing."
+        }
+      ]
+    ]
+  }
+}

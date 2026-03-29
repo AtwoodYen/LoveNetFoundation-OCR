@@ -254,6 +254,7 @@ class TaskManager:
                 {
                     "task_id": task.task_id,
                     "document_id": task.document_id,
+                    "original_filename": task.original_filename,
                     "status": task.status,
                     "progress": task.progress,
                     "current_step": task.current_step,

@@ -107,6 +107,7 @@ export interface TaskStatusData {
 	}
 	layout?: Array<{
 		block_content: string
+		layout_type?: string
 		bbox: [number, number, number, number]
 		block_id: number
 		text_length?: number | null
@@ -152,6 +153,54 @@ export async function getTaskStatus(taskId: string | number): Promise<TaskStatus
 	}
 
 	return response.data.data
+}
+
+export interface TaskListItem {
+	task_id: string
+	document_id: string
+	original_filename?: string
+	status: string
+	progress?: number
+	current_step?: string | null
+	created_at?: string
+	started_at?: string
+	completed_at?: string
+	processing_mode?: string
+	priority?: number
+}
+
+export interface TaskListResponseData {
+	tasks: TaskListItem[]
+	total: number
+	limit: number
+	offset: number
+}
+
+/**
+ * 列出 OCR 任務（後台檢視手機／網頁上傳紀錄）
+ */
+export async function listTasks(params?: {
+	status?: string
+	limit?: number
+	offset?: number
+}): Promise<TaskListResponseData> {
+	const response = await api.get<ApiResponse<TaskListResponseData>>('/tasks/', {
+		params: {
+			status: params?.status,
+			limit: params?.limit ?? 100,
+			offset: params?.offset ?? 0,
+		},
+	})
+	if (!response.data.success) {
+		throw new Error(response.data.message || '取得任務列表失敗')
+	}
+	return response.data.data
+}
+
+/** 後端 Excel 匯出路徑（同源或 VITE_API_URL） */
+export function getTaskExportXlsxUrl(taskId: string): string {
+	const base = BASE_URL.replace(/\/$/, '')
+	return `${base}/tasks/${taskId}/export/xlsx`
 }
 
 export default api

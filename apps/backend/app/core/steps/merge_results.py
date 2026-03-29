@@ -116,6 +116,7 @@ async def _merge_to_markdown(
             merge_res_layout.append(
                 {
                     "block_content": text,
+                    "layout_type": layout_type,
                     "bbox": block.get("layout_box"),
                     "block_id": block.get("index"),
                     "page_index": block.get("page_index"),

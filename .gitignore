@@ -174,5 +174,8 @@ data/
 
 /apps/frontend/node_modules/
 /apps/frontend/dist/
+/apps/mobile/node_modules/
+/apps/mobile/.expo/
+/apps/mobile/dist/
 *.pid
 .DS_Store

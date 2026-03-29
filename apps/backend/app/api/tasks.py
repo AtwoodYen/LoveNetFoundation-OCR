@@ -4,11 +4,13 @@
 
 import json
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime, UTC
 
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Response
+from fastapi.responses import StreamingResponse
 from mimetypes import guess_type
 
 from app.schemas.response import ApiResponse, TaskData, TaskResultData
@@ -16,6 +18,7 @@ from app.core.task_manager import get_task_manager
 from app.utils.logger import logger
 from app.utils.upload_file_manager import file_upload_handler
 from app.utils.config import settings
+from app.utils.excel_export import build_task_excel
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -171,6 +174,67 @@ async def read_file(path: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to read file: {str(e)}",
+        )
+
+
+@router.get("/{task_id}/export/xlsx")
+async def export_task_excel(task_id: str):
+    """
+    將任務 OCR 結果匯出為 Excel（全部區塊、手寫區塊、摘要）。
+    任務須為 completed 且已有合併結果檔。
+    """
+    try:
+        task_manager = get_task_manager()
+        task_info = await task_manager.get_task_status(task_id)
+
+        if not task_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Task not found: {task_id}",
+            )
+
+        if task_info.get("status") != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Task is not completed yet",
+            )
+
+        result_file_path = task_info.get("result_file_path")
+        if not result_file_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No result file for this task",
+            )
+
+        result_path = Path(result_file_path)
+        if not result_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Result file missing on server",
+            )
+
+        with open(result_path, "r", encoding="utf-8") as f:
+            result_data = json.load(f)
+
+        content = build_task_excel(result_data)
+        filename = f"ocr_{task_id[:8]}.xlsx"
+        return StreamingResponse(
+            BytesIO(content),
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export task excel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export: {str(e)}",
         )
 
 
