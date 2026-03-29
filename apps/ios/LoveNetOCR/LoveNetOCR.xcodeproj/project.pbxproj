@@ -17,6 +17,7 @@
 		B00100000000000000000008 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000008 /* TaskDetailView.swift */; };
 		B00100000000000000000009 /* TaskListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000009 /* TaskListView.swift */; };
 		B0010000000000000000000A /* UploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000A /* UploadView.swift */; };
+		B0010000000000000000000C /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000D /* CameraPicker.swift */; };
 		B0010000000000000000000B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000B /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +32,7 @@
 		F00100000000000000000008 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		F00100000000000000000009 /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
 		F0010000000000000000000A /* UploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadView.swift; sourceTree = "<group>"; };
+		F0010000000000000000000D /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		F0010000000000000000000B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F0010000000000000000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F001000000000000000000FF /* LoveNetOCR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LoveNetOCR.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -68,6 +70,7 @@
 				F00100000000000000000008 /* TaskDetailView.swift */,
 				F00100000000000000000009 /* TaskListView.swift */,
 				F0010000000000000000000A /* UploadView.swift */,
+				F0010000000000000000000D /* CameraPicker.swift */,
 				F0010000000000000000000B /* Assets.xcassets */,
 				F0010000000000000000000C /* Info.plist */,
 			);
@@ -162,6 +165,7 @@
 				B00100000000000000000008 /* TaskDetailView.swift in Sources */,
 				B00100000000000000000009 /* TaskListView.swift in Sources */,
 				B0010000000000000000000A /* UploadView.swift in Sources */,
+				B0010000000000000000000C /* CameraPicker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -219,7 +223,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = QWY2AXYCTJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LoveNetOCR/Info.plist;
@@ -246,7 +250,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = QWY2AXYCTJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LoveNetOCR/Info.plist;

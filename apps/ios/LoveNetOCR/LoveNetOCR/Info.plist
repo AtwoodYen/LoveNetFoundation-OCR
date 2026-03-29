@@ -20,6 +20,10 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>需要相機以拍攝文件並進行 OCR 辨識。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要存取相簿以選擇照片進行 OCR 辨識。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>需要連線到與本機同一區網的 LoveNet OCR 後端服務。</string>
 	<key>NSAppTransportSecurity</key>

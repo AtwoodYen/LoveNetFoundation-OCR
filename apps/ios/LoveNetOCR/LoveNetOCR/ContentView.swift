@@ -9,7 +9,7 @@ struct ContentView: View {
                 UploadView()
             }
             .tabItem {
-                Label("上傳", systemImage: "square.and.arrow.up")
+                Label("拍照", systemImage: "camera.fill")
             }
 
             NavigationStack {
