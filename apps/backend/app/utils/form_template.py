@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from app.utils.config import settings
+from app.utils.ink_color_filter import filter_blue_black_ink, should_apply_ink_filter
 from app.utils.logger import logger
 
 
@@ -63,9 +64,11 @@ def composite_handwriting_crops(
     output_dir: Path,
     page_idx: int,
     padding: int = 12,
+    ink_filter_spec: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     將多個手寫區垂直拼成一張圖，維持「一頁一檔」給後續 OCR。
+    ink_filter_spec 非 None 時僅保留藍／黑筆跡（黑字白底）。
     """
     with Image.open(page_image_path) as im:
         img = im.convert("RGB")
@@ -73,7 +76,10 @@ def composite_handwriting_crops(
         crops: List[Image.Image] = []
         for r in regions:
             box = _norm_box(r, w, h)
-            crops.append(img.crop(box))
+            piece = img.crop(box)
+            if ink_filter_spec is not None:
+                piece = filter_blue_black_ink(piece, ink_filter_spec)
+            crops.append(piece)
 
     if not crops:
         raise ValueError("沒有任何裁切區")
@@ -102,13 +108,18 @@ def apply_form_template_to_pdf_result(
     if not original_files:
         return pdf_result
 
+    ink_cfg = should_apply_ink_filter(spec)
     crop_dir = Path(task_output_dir) / "handwriting_crops"
     new_files: List[str] = []
     for i, img_path in enumerate(original_files):
         regions = regions_for_page(spec, i)
         try:
             cropped = composite_handwriting_crops(
-                img_path, regions, crop_dir, i + 1
+                img_path,
+                regions,
+                crop_dir,
+                i + 1,
+                ink_filter_spec=ink_cfg,
             )
             new_files.append(cropped)
             logger.info(
@@ -126,5 +137,7 @@ def apply_form_template_to_pdf_result(
     meta = dict(out.get("metadata") or {})
     meta["form_template"] = template_id
     meta["form_template_label"] = spec.get("label", template_id)
+    if ink_cfg is not None:
+        meta["ink_filter"] = "blue_black"
     out["metadata"] = meta
     return out
