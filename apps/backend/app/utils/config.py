@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # 输出目录
     OUTPUT_DIR: str = "./data"
 
+    # 版面 / OCR 推論服務（與本 API 分離；Worker 會對此 URL 送 POST）
+    # 環境變數：LAYOUT_OCR_URL；未啟動該服務時會出現 connection failed
+    layout_ocr_url: str = "http://127.0.0.1:5002/glmocr/parse"
+
     # Worker配置
     RUN_WORKERS: bool = True
     WORKER_COUNT: int = 5

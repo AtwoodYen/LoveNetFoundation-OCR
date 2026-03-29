@@ -110,7 +110,13 @@ async def _call_ocr_service(
 
     if progress_callback:
         await progress_callback(0.0, f"Initializing OCR service for {page_count} pages")
-    custom_url = config.get("custom_url", None)
+    raw_url = config.get("custom_url")
+    if raw_url is None:
+        custom_url = None
+    elif isinstance(raw_url, str):
+        custom_url = raw_url.strip() or None
+    else:
+        custom_url = raw_url
     cli = LayoutAndOCRClient()
     pages_result = []
     page_width = page_size.get("width")

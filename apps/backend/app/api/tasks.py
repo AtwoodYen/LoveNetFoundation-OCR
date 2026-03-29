@@ -52,9 +52,8 @@ async def submit_task(
         task_id = str(uuid.uuid4())
 
         parsed_ocr_config = None
-        # 解析配置
-        if custom_url is not None :
-            parsed_ocr_config = {"custom_url":custom_url}
+        if custom_url is not None and str(custom_url).strip():
+            parsed_ocr_config = {"custom_url": str(custom_url).strip()}
 
         # 保存文件
         save_dir = str(Path(settings.OUTPUT_DIR) / task_id)

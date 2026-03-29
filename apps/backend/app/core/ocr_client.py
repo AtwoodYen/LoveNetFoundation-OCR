@@ -78,10 +78,7 @@ class LayoutAndOCRClient:
             service_url: 服务URL。如果为None，则从配置加载。
             timeout: 请求超时时间（秒）
         """
-        self.service_url = service_url or getattr(settings, "layout_ocr_url", None)
-        if not self.service_url:
-            # 默认配置
-            self.service_url = "http://localhost:5002/glmocr/parse"
+        self.service_url = service_url or settings.layout_ocr_url
 
         self.timeout = timeout
         self.async_headers = {"Content-Type": "application/json"}
@@ -274,7 +271,7 @@ class LayoutAndOCRClient:
                     raise ServiceResponseError(response.status_code, error_msg)
 
         except httpx.RequestError as e:
-            error_msg = f"Failed to make request to service: {str(e)}"
+            error_msg = f"Failed to make request to OCR service at {url!r}: {e}"
             logger.error(error_msg)
             raise ServiceRequestError(error_msg)
         except (KeyError, ValueError) as e:
