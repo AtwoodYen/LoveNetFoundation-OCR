@@ -60,6 +60,14 @@ class TaskRepository(BaseRepository[Task]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def delete_by_task_id(self, task_id: str) -> bool:
+        """依 task_id 刪除任務列（硬刪）。"""
+        from sqlalchemy import delete
+
+        stmt = delete(Task).where(Task.task_id == task_id)
+        result = await self.session.execute(stmt)
+        return result.rowcount > 0
+
     async def acquire_task_lock(
         self,
         task_id: str,

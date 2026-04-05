@@ -6,6 +6,8 @@ struct TaskListView: View {
     @State private var filter: String = ""
     @State private var isLoading = false
     @State private var errorText: String?
+    @State private var showDeleteAllConfirm = false
+    @State private var isDeleting = false
 
     var body: some View {
         List {
@@ -17,29 +19,38 @@ struct TaskListView: View {
                 }
             }
             ForEach(items, id: \.task_id) { t in
-                NavigationLink(value: t.task_id) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(t.original_filename ?? t.task_id.prefix(8) + "…")
-                            .font(.headline)
-                        HStack {
-                            Text(statusLabel(t.status))
-                                .font(.caption)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(statusColor(t.status).opacity(0.2))
-                                .foregroundStyle(statusColor(t.status))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                            if let p = t.progress {
-                                Text("\(Int(p))%")
+                HStack {
+                    NavigationLink(value: t.task_id) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(t.original_filename ?? t.task_id.prefix(8) + "…")
+                                .font(.headline)
+                            HStack {
+                                Text(statusLabel(t.status))
                                     .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(statusColor(t.status).opacity(0.2))
+                                    .foregroundStyle(statusColor(t.status))
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                if let p = t.progress {
+                                    Text("\(Int(p))%")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            if let step = t.current_step {
+                                Text(step)
+                                    .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        if let step = t.current_step {
-                            Text(step)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        Task { await deleteTask(t.task_id) }
+                    } label: {
+                        Label("刪除", systemImage: "trash")
                     }
                 }
             }
@@ -50,12 +61,22 @@ struct TaskListView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+                HStack(spacing: 12) {
+                    Button {
+                        showDeleteAllConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isLoading || isDeleting || items.isEmpty)
+
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(isLoading || isDeleting)
                 }
-                .disabled(isLoading)
             }
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
@@ -68,6 +89,14 @@ struct TaskListView: View {
                     Label("篩選", systemImage: "line.3.horizontal.decrease.circle")
                 }
             }
+        }
+        .alert("確認刪除", isPresented: $showDeleteAllConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("全部刪除", role: .destructive) {
+                Task { await deleteAllTasks() }
+            }
+        } message: {
+            Text("確定要刪除所有 \(items.count) 個任務嗎？此操作無法復原。")
         }
         .refreshable {
             await load()
@@ -87,6 +116,39 @@ struct TaskListView: View {
             items = data.tasks
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    private func deleteTask(_ taskId: String) async {
+        do {
+            try await env.client.cancelTask(taskId: taskId)
+            // 從列表中移除
+            items.removeAll { $0.task_id == taskId }
+        } catch {
+            errorText = "刪除失敗：\(error.localizedDescription)"
+        }
+    }
+
+    private func deleteAllTasks() async {
+        isDeleting = true
+        errorText = nil
+        defer { isDeleting = false }
+
+        let tasksToDelete = items
+        var failedCount = 0
+
+        for task in tasksToDelete {
+            do {
+                try await env.client.cancelTask(taskId: task.task_id)
+                // 逐個從列表移除，讓 UI 即時更新
+                items.removeAll { $0.task_id == task.task_id }
+            } catch {
+                failedCount += 1
+            }
+        }
+
+        if failedCount > 0 {
+            errorText = "有 \(failedCount) 個任務刪除失敗"
         }
     }
 

@@ -1,10 +1,15 @@
 import SwiftUI
+import UIKit
 
 struct ServerSettingsView: View {
     @EnvironmentObject private var env: AppEnvironment
     @State private var draftURL: String = ""
     @State private var message: String?
     @State private var isChecking = false
+
+    // 按鈕動畫狀態
+    @State private var isApplyPressed = false
+    @State private var isTestPressed = false
 
     var body: some View {
         Form {
@@ -23,19 +28,29 @@ struct ServerSettingsView: View {
 
             Section {
                 Button {
+                    triggerButtonFeedback(isPressed: $isApplyPressed)
                     applyAndSave()
                 } label: {
                     Label("套用並儲存", systemImage: "checkmark.circle")
+                        .foregroundColor(isApplyPressed ? .yellow : .red)
                 }
+                .scaleEffect(isApplyPressed ? 1.08 : 1.0)
+                .animation(.easeInOut(duration: 0.15), value: isApplyPressed)
+
                 Button(role: .none) {
+                    triggerButtonFeedback(isPressed: $isTestPressed)
                     Task { await testConnection() }
                 } label: {
                     if isChecking {
                         Label("測試連線中…", systemImage: "antenna.radiowaves.left.and.right")
+                            .foregroundColor(.orange)
                     } else {
                         Label("測試連線", systemImage: "network")
+                            .foregroundColor(isTestPressed ? .yellow : .red)
                     }
                 }
+                .scaleEffect(isTestPressed ? 1.08 : 1.0)
+                .animation(.easeInOut(duration: 0.15), value: isTestPressed)
                 .disabled(isChecking)
             }
 
@@ -74,6 +89,19 @@ struct ServerSettingsView: View {
             message = "連線成功：\(h.status)，版本 \(h.version ?? "?")，Worker \(h.active_workers ?? 0)/\(h.workers_count ?? 0)"
         } catch {
             message = "連線失敗：\(error.localizedDescription)"
+        }
+    }
+
+    /// 觸發按鈕回饋動畫
+    private func triggerButtonFeedback(isPressed: Binding<Bool>) {
+        // 觸覺回饋
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+
+        // 視覺回饋：放大 + 變色
+        isPressed.wrappedValue = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            isPressed.wrappedValue = false
         }
     }
 }

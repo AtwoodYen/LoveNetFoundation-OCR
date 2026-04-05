@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3AE64D37ECEB84A67C6DFB0D /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C118A0C15810D188D0D7AD86 /* CameraManager.swift */; };
+		5E483DF15E716F59138BA0C2 /* DetectionStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7F20373A3DA6C2E51E907F9 /* DetectionStatusView.swift */; };
+		692DC5EC4292FF177ED787C1 /* EnvelopeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427158F192F7399EFB2A4AAC /* EnvelopeDetector.swift */; };
+		79AF95801B7C5164A5E5BE5A /* GuideOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B951677C36BE70607E080D4 /* GuideOverlayView.swift */; };
+		8D6E44AD0CB90EB0C0E3CE33 /* EnvelopeCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8767B0EC8089ABE5BE2FB22D /* EnvelopeCameraView.swift */; };
 		B00100000000000000000001 /* LoveNetOCRApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000001 /* LoveNetOCRApp.swift */; };
 		B00100000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000002 /* ContentView.swift */; };
 		B00100000000000000000003 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000003 /* AppEnvironment.swift */; };
@@ -17,12 +22,22 @@
 		B00100000000000000000008 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000008 /* TaskDetailView.swift */; };
 		B00100000000000000000009 /* TaskListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00100000000000000000009 /* TaskListView.swift */; };
 		B0010000000000000000000A /* UploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000A /* UploadView.swift */; };
+		B0010000000000000000000B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000B /* Assets.xcassets */; };
 		B0010000000000000000000C /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000D /* CameraPicker.swift */; };
 		B0010000000000000000000D /* DeviceTextRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000E /* DeviceTextRecognizer.swift */; };
-		B0010000000000000000000B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000B /* Assets.xcassets */; };
+		B0010000000000000000000E /* OfferingEnvelopeProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010000000000000000000F /* OfferingEnvelopeProcessor.swift */; };
+		BD507C491BC64DA324692974 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB09103178EF4AEB5A5578E4 /* CameraPreviewView.swift */; };
+		D021CF47C1B509593856C98D /* PerspectiveCorrector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4029CD205D185CDD0624B446 /* PerspectiveCorrector.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		4029CD205D185CDD0624B446 /* PerspectiveCorrector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PerspectiveCorrector.swift; sourceTree = "<group>"; };
+		427158F192F7399EFB2A4AAC /* EnvelopeDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnvelopeDetector.swift; sourceTree = "<group>"; };
+		7B951677C36BE70607E080D4 /* GuideOverlayView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GuideOverlayView.swift; sourceTree = "<group>"; };
+		8767B0EC8089ABE5BE2FB22D /* EnvelopeCameraView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnvelopeCameraView.swift; sourceTree = "<group>"; };
+		AB09103178EF4AEB5A5578E4 /* CameraPreviewView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
+		C118A0C15810D188D0D7AD86 /* CameraManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
+		C7F20373A3DA6C2E51E907F9 /* DetectionStatusView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DetectionStatusView.swift; sourceTree = "<group>"; };
 		F00100000000000000000001 /* LoveNetOCRApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoveNetOCRApp.swift; sourceTree = "<group>"; };
 		F00100000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F00100000000000000000003 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
@@ -33,10 +48,11 @@
 		F00100000000000000000008 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		F00100000000000000000009 /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
 		F0010000000000000000000A /* UploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadView.swift; sourceTree = "<group>"; };
-		F0010000000000000000000D /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
-		F0010000000000000000000E /* DeviceTextRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTextRecognizer.swift; sourceTree = "<group>"; };
 		F0010000000000000000000B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F0010000000000000000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0010000000000000000000D /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
+		F0010000000000000000000E /* DeviceTextRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTextRecognizer.swift; sourceTree = "<group>"; };
+		F0010000000000000000000F /* OfferingEnvelopeProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfferingEnvelopeProcessor.swift; sourceTree = "<group>"; };
 		F001000000000000000000FF /* LoveNetOCR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LoveNetOCR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -51,6 +67,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7F779FB007F4BDB91B1A163D /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				C118A0C15810D188D0D7AD86 /* CameraManager.swift */,
+				AB09103178EF4AEB5A5578E4 /* CameraPreviewView.swift */,
+				7B951677C36BE70607E080D4 /* GuideOverlayView.swift */,
+				427158F192F7399EFB2A4AAC /* EnvelopeDetector.swift */,
+				8767B0EC8089ABE5BE2FB22D /* EnvelopeCameraView.swift */,
+				4029CD205D185CDD0624B446 /* PerspectiveCorrector.swift */,
+				C7F20373A3DA6C2E51E907F9 /* DetectionStatusView.swift */,
+			);
+			name = Camera;
+			path = Camera;
+			sourceTree = "<group>";
+		};
 		G00000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
@@ -74,8 +105,10 @@
 				F0010000000000000000000A /* UploadView.swift */,
 				F0010000000000000000000D /* CameraPicker.swift */,
 				F0010000000000000000000E /* DeviceTextRecognizer.swift */,
+				F0010000000000000000000F /* OfferingEnvelopeProcessor.swift */,
 				F0010000000000000000000B /* Assets.xcassets */,
 				F0010000000000000000000C /* Info.plist */,
+				7F779FB007F4BDB91B1A163D /* Camera */,
 			);
 			path = LoveNetOCR;
 			sourceTree = "<group>";
@@ -170,6 +203,14 @@
 				B0010000000000000000000A /* UploadView.swift in Sources */,
 				B0010000000000000000000C /* CameraPicker.swift in Sources */,
 				B0010000000000000000000D /* DeviceTextRecognizer.swift in Sources */,
+				B0010000000000000000000E /* OfferingEnvelopeProcessor.swift in Sources */,
+				3AE64D37ECEB84A67C6DFB0D /* CameraManager.swift in Sources */,
+				BD507C491BC64DA324692974 /* CameraPreviewView.swift in Sources */,
+				79AF95801B7C5164A5E5BE5A /* GuideOverlayView.swift in Sources */,
+				692DC5EC4292FF177ED787C1 /* EnvelopeDetector.swift in Sources */,
+				8D6E44AD0CB90EB0C0E3CE33 /* EnvelopeCameraView.swift in Sources */,
+				D021CF47C1B509593856C98D /* PerspectiveCorrector.swift in Sources */,
+				5E483DF15E716F59138BA0C2 /* DetectionStatusView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -31,6 +31,9 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 )
 async def submit_task(
     file: UploadFile = File(..., description="要处理的文件"),
+    form_area_file: Optional[UploadFile] = File(
+        None, description="表格區域裁切圖片（用於金額 OCR 加強）"
+    ),
     processing_mode: str = Form("pipeline"),
     priority: int = Form(2, description="1=低,2=正常,3=高,4=紧急"),
     custom_url: str = Form(None, description=""),
@@ -87,6 +90,20 @@ async def submit_task(
         saved_path_obj = Path(saved_path)
         file_size = saved_path_obj.stat().st_size
         file_type = saved_path_obj.suffix.lstrip(".").lower()
+
+        # 保存表格區域圖片（如果有）
+        form_area_path: Optional[str] = None
+        if form_area_file is not None and form_area_file.filename:
+            form_area_saved = await file_upload_handler.save_to_path(
+                file=form_area_file,
+                filename="form_area.png",
+                upload_dir=save_dir,
+            )
+            form_area_path = str(form_area_saved)
+            logger.info(f"Saved form area image: {form_area_path}")
+            if parsed_ocr_config is None:
+                parsed_ocr_config = {}
+            parsed_ocr_config["form_area_path"] = form_area_path
 
         # 提交任务
         task_manager = get_task_manager()
@@ -337,7 +354,7 @@ async def get_task_status(task_id: str):
 @router.delete("/{task_id}", response_model=ApiResponse[dict])
 async def cancel_task(task_id: str):
     """
-    取消任务
+    取消進行中任務，或刪除已結束／排隊中任務的紀錄與輸出目錄。
 
     - **task_id**: 任务ID
     """
@@ -348,16 +365,16 @@ async def cancel_task(task_id: str):
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task not found or cannot be cancelled: {task_id}",
+                detail=f"Task not found or cannot be removed: {task_id}",
             )
 
         return ApiResponse(
             success=True,
             data={
                 "task_id": task_id,
-                "status": "cancelled",
+                "status": "removed",
             },
-            message="Task cancelled successfully",
+            message="Task removed or cancelled successfully",
         )
 
     except HTTPException:
@@ -399,4 +416,53 @@ async def list_tasks(status: Optional[str] = None, limit: int = 100, offset: int
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list tasks: {str(e)}",
+        )
+
+
+@router.post("/{task_id}/debug", response_model=ApiResponse[dict])
+async def upload_debug_image(
+    task_id: str,
+    file: UploadFile = File(..., description="除錯圖片"),
+):
+    """
+    上傳除錯圖片到任務資料夾
+
+    用於 iOS 前端預處理除錯：每一步預處理結果都上傳到 Server 以便檢視。
+
+    - **task_id**: 任務ID
+    - **file**: 除錯圖片（PNG/JPEG）
+    """
+    try:
+        # 確認任務資料夾存在
+        task_dir = Path(settings.OUTPUT_DIR) / task_id
+        if not task_dir.exists():
+            task_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created debug directory for task: {task_id}")
+
+        # 保存檔案
+        filename = file.filename or f"debug_{uuid.uuid4()}.png"
+        file_path = task_dir / filename
+
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        logger.info(f"Saved debug image: {file_path} ({len(content)} bytes)")
+
+        return ApiResponse(
+            success=True,
+            data={
+                "task_id": task_id,
+                "filename": filename,
+                "path": str(file_path),
+                "size": len(content),
+            },
+            message="Debug image uploaded successfully",
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to upload debug image: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload debug image: {str(e)}",
         )

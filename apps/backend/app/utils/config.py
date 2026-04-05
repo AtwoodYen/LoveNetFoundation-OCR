@@ -1,6 +1,7 @@
 """
 应用配置管理
 """
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 from typing import Literal, Optional
 from pathlib import Path
@@ -31,8 +32,15 @@ class Settings(BaseSettings):
     ASSETS_DIR: str = _default_assets_dir()
 
     # 版面 / OCR 推論服務（與本 API 分離；Worker 會對此 URL 送 POST）
-    # 環境變數：LAYOUT_OCR_URL；未啟動該服務時會出現 connection failed
-    layout_ocr_url: str = "http://127.0.0.1:5002/glmocr/parse"
+    # .env 可用 LAYOUT_OCR_URL 或 layout_ocr_url（case_sensitive=True 時需別名）
+    layout_ocr_url: str = Field(
+        default="http://127.0.0.1:5002/glmocr/parse",
+        validation_alias=AliasChoices("LAYOUT_OCR_URL", "layout_ocr_url"),
+    )
+
+    # Google Cloud Vision API Key
+    # 環境變數：GOOGLE_VISION_API_KEY
+    GOOGLE_VISION_API_KEY: str = ""
 
     # Worker配置
     RUN_WORKERS: bool = True

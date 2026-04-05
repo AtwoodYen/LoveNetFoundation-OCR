@@ -128,7 +128,9 @@ final class OCRAPIClient {
         outputFormat: String = "markdown",
         customOCRURL: String? = nil,
         clientMarkdown: String? = nil,
-        formTemplate: String? = nil
+        formTemplate: String? = nil,
+        formAreaImage: Data? = nil,
+        formAreaUploadFilename: String? = nil
     ) async throws -> TaskSubmitPayload {
         guard fileURL.isFileURL else { throw OCRAPIError.uploadReadFailed }
         let fileData: Data
@@ -185,6 +187,21 @@ final class OCRAPIClient {
             append("\(ft)\r\n")
         }
 
+        // 第二張圖片：表格區域裁切
+        if let formData = formAreaImage {
+            let formFn: String
+            if let n = formAreaUploadFilename, !n.isEmpty {
+                formFn = n
+            } else {
+                formFn = "form_area.png"
+            }
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"form_area_file\"; filename=\"\(formFn)\"\r\n")
+            append("Content-Type: image/png\r\n\r\n")
+            body.append(formData)
+            append("\r\n")
+        }
+
         append("--\(boundary)--\r\n")
 
         var req = URLRequest(url: apiURL("tasks/upload"))
@@ -213,5 +230,41 @@ final class OCRAPIClient {
             return m
         }
         return "application/octet-stream"
+    }
+
+    // MARK: - Debug Image Upload
+
+    /// 上傳除錯圖片到指定任務的資料夾
+    /// - Parameters:
+    ///   - image: 要上傳的圖片
+    ///   - taskId: 任務 ID
+    ///   - filename: 檔案名稱（如 page_0001.png）
+    func uploadDebugImage(image: Data, taskId: String, filename: String) async throws {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        func append(_ s: String) {
+            if let d = s.data(using: .utf8) { body.append(d) }
+        }
+
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+        append("Content-Type: image/png\r\n\r\n")
+        body.append(image)
+        append("\r\n")
+        append("--\(boundary)--\r\n")
+
+        var req = URLRequest(url: apiURL("tasks/\(taskId)/debug"))
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        req.timeoutInterval = 60
+
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw OCRAPIError.badStatus(-1, nil) }
+        guard (200 ... 299).contains(http.statusCode) else {
+            let text = String(data: data, encoding: .utf8)
+            throw OCRAPIError.badStatus(http.statusCode, text)
+        }
     }
 }

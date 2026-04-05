@@ -3,7 +3,9 @@
 """
 
 import asyncio
+import shutil
 import uuid
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
 
@@ -197,13 +199,10 @@ class TaskManager:
 
     async def cancel_task(self, task_id: str) -> bool:
         """
-        取消任务
+        取消或刪除任務（DELETE /tasks/{id} 使用）。
 
-        Args:
-            task_id: 任务ID
-
-        Returns:
-            bool: 是否成功取消
+        - processing：標記為 cancelled（執行中的 worker 仍可能跑完，但列表可再刪一次清除）。
+        - pending / completed / failed / cancelled / dead_letter：自資料庫刪除列並盡力刪除輸出目錄。
         """
         try:
             async with AsyncSessionLocal() as db:
@@ -213,21 +212,34 @@ class TaskManager:
                 if not task:
                     return False
 
-                # 只能取消pending或processing的任务
-                if task.status not in [TaskStatus.PENDING, TaskStatus.PROCESSING]:
+                if task.status == TaskStatus.PROCESSING:
+                    await task_repo.update_task_status(
+                        task_id=task_id, status=TaskStatus.CANCELLED
+                    )
+                    await db.commit()
+                    logger.info(f"Task marked cancelled (was processing): {task_id}")
+                    return True
+
+                if task.status not in (
+                    TaskStatus.PENDING,
+                    TaskStatus.COMPLETED,
+                    TaskStatus.FAILED,
+                    TaskStatus.CANCELLED,
+                    TaskStatus.DEAD_LETTER,
+                ):
                     return False
 
-                # 更新状态
-                await task_repo.update_task_status(
-                    task_id=task_id, status=TaskStatus.CANCELLED
-                )
+                await task_repo.delete_by_task_id(task_id)
                 await db.commit()
+                logger.info(f"Task record removed: {task_id}")
 
-                logger.info(f"Task cancelled: {task_id}")
-                return True
+            task_dir = Path(settings.OUTPUT_DIR) / task_id
+            if task_dir.is_dir():
+                shutil.rmtree(task_dir, ignore_errors=True)
+            return True
 
         except Exception as e:
-            logger.error(f"Failed to cancel task {task_id}: {e}")
+            logger.error(f"Failed to cancel/remove task {task_id}: {e}")
             return False
 
     async def list_tasks(

@@ -1,4 +1,7 @@
 import SwiftUI
+import os.log
+
+private let logger = Logger(subsystem: "com.lovenet.ocr", category: "TaskDetail")
 
 struct TaskDetailView: View {
     @EnvironmentObject private var env: AppEnvironment
@@ -121,7 +124,23 @@ struct TaskDetailView: View {
         errorText = nil
         do {
             detail = try await env.client.getTask(taskId: taskId)
+
+            // 日誌：顯示服務器返回的結果
+            if let d = detail {
+                logger.info("📥 任務狀態: \(d.status), 進度: \(d.progress ?? 0)%")
+                if let od = d.offering_display {
+                    logger.info("📋 offering_display.formatted_text:\n\(od.formatted_text ?? "(空)")")
+                    logger.info("📋 offering_display.summary 共 \(od.summary.count) 項:")
+                    for row in od.summary {
+                        logger.info("  - \(row.label): \(row.value)")
+                    }
+                }
+                if let md = d.full_markdown {
+                    logger.info("📄 full_markdown 前 300 字:\n\(String(md.prefix(300)))")
+                }
+            }
         } catch {
+            logger.error("❌ 取得任務失敗: \(error.localizedDescription)")
             errorText = error.localizedDescription
         }
     }

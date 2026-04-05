@@ -42,6 +42,55 @@ enum OCRMethod: String, CaseIterable, Identifiable {
     var processingMode: String {
         rawValue
     }
+
+    /// 上傳檔名用（ASCII，不含空白）
+    var filenameEngineTag: String {
+        switch self {
+        case .deviceVision: return "AppleVision"
+        case .backendGLM: return "GLM"
+        case .backendGoogleVision: return "GoogleVision"
+        }
+    }
+}
+
+// MARK: - 上傳檔名：ocr_yyyyMMdd_序號_引擎_e0|e1_pp0|pp1
+
+private enum OCRUploadNaming {
+    private static let udDay = "ocr_daily_seq_yyyymmdd"
+    private static let udSeq = "ocr_daily_seq_counter"
+
+    /// 西曆當日序號：當日第一筆為 0，之後遞增。
+    static func nextDailySequence() -> Int {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone.current
+        let comp = cal.dateComponents([.year, .month, .day], from: Date())
+        let ymd = String(format: "%04d%02d%02d", comp.year!, comp.month!, comp.day!)
+        let ud = UserDefaults.standard
+        let prev = ud.string(forKey: udDay) ?? ""
+        var n = ud.integer(forKey: udSeq)
+        if prev != ymd {
+            n = 0
+            ud.set(ymd, forKey: udDay)
+        }
+        let current = n
+        ud.set(n + 1, forKey: udSeq)
+        return current
+    }
+
+    static func baseFilename(
+        sequence: Int,
+        engineTag: String,
+        envelope: Bool,
+        preprocessed: Bool
+    ) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone.current
+        let comp = cal.dateComponents([.year, .month, .day], from: Date())
+        let ymd = String(format: "%04d%02d%02d", comp.year!, comp.month!, comp.day!)
+        let e = envelope ? "e1" : "e0"
+        let pp = preprocessed ? "pp1" : "pp0"
+        return "ocr_\(ymd)_\(sequence)_\(engineTag)_\(e)_\(pp)"
+    }
 }
 
 struct UploadView: View {
@@ -254,14 +303,28 @@ struct UploadView: View {
         }
     }
 
-    private func pngTempURL(from image: UIImage) throws -> URL {
+    private func writeTempOCRData(
+        _ data: Data,
+        ext: String,
+        sequence seq: Int,
+        preprocessed: Bool
+    ) throws -> URL {
+        let base = OCRUploadNaming.baseFilename(
+            sequence: seq,
+            engineTag: ocrMethod.filenameEngineTag,
+            envelope: useOfferingEnvelopeCrop,
+            preprocessed: preprocessed
+        )
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(base).\(ext)")
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    private func writeTempOCRPNG(from image: UIImage, sequence seq: Int, preprocessed: Bool) throws -> URL {
         guard let data = image.pngData() else {
             throw URLError(.cannotCreateFile)
         }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ocr_camera_\(UUID().uuidString).png")
-        try data.write(to: url, options: .atomic)
-        return url
+        return try writeTempOCRData(data, ext: "png", sequence: seq, preprocessed: preprocessed)
     }
 
     private func uploadCapturedImage(_ image: UIImage) async {
@@ -287,8 +350,8 @@ struct UploadView: View {
                         return
                     }
 
-                    // 保存過濾後的圖片
-                    let url = try pngTempURL(from: result.filteredImage)
+                    let seqCap = OCRUploadNaming.nextDailySequence()
+                    let url = try writeTempOCRPNG(from: result.filteredImage, sequence: seqCap, preprocessed: true)
                     logger.info("📤 上傳過濾後圖片，格式化輸出長度: \(result.formattedOutput.count)")
                     await performUpload(fileURL: url, clientMarkdown: result.formattedOutput)
                 } else {
@@ -305,7 +368,8 @@ struct UploadView: View {
                         return
                     }
 
-                    let url = try pngTempURL(from: image)
+                    let seqCap = OCRUploadNaming.nextDailySequence()
+                    let url = try writeTempOCRPNG(from: image, sequence: seqCap, preprocessed: false)
                     logger.info("📤 上傳到伺服器，client_markdown 長度: \(text.count)")
                     await performUpload(fileURL: url, clientMarkdown: text)
                 }
@@ -320,8 +384,8 @@ struct UploadView: View {
                         // 除錯模式：先建立任務，然後每一步都上傳
                         logger.info("🔧 奉獻袋除錯模式：每一步都上傳到 Server...")
 
-                        // 先上傳原圖建立任務
-                        let originalUrl = try pngTempURL(from: image)
+                        let seqDbg = OCRUploadNaming.nextDailySequence()
+                        let originalUrl = try writeTempOCRPNG(from: image, sequence: seqDbg, preprocessed: false)
                         let taskResult = await performUploadAndGetTaskId(fileURL: originalUrl, clientMarkdown: nil)
 
                         if let taskId = taskResult {
@@ -355,9 +419,18 @@ struct UploadView: View {
                     }
                 }
 
-                let url = try pngTempURL(from: imageToUpload)
+                let seqBE = OCRUploadNaming.nextDailySequence()
+                let url = try writeTempOCRPNG(from: imageToUpload, sequence: seqBE, preprocessed: useOfferingEnvelopeCrop)
+                let formAreaName: String? = formAreaData != nil
+                    ? (url.deletingPathExtension().lastPathComponent + "_formarea.png")
+                    : nil
                 logger.info("📤 上傳到伺服器（後端 OCR 模式）")
-                await performUpload(fileURL: url, clientMarkdown: nil, formAreaImage: formAreaData)
+                await performUpload(
+                    fileURL: url,
+                    clientMarkdown: nil,
+                    formAreaImage: formAreaData,
+                    formAreaUploadFilename: formAreaName
+                )
             }
         } catch {
             logger.error("❌ 上傳失敗: \(error.localizedDescription)")
@@ -391,7 +464,8 @@ struct UploadView: View {
                         return
                     }
 
-                    let url = try pngTempURL(from: result.filteredImage)
+                    let seqLib = OCRUploadNaming.nextDailySequence()
+                    let url = try writeTempOCRPNG(from: result.filteredImage, sequence: seqLib, preprocessed: true)
                     await performUpload(fileURL: url, clientMarkdown: result.formattedOutput)
                 } else {
                     // 一般 OCR
@@ -403,7 +477,8 @@ struct UploadView: View {
                         }
                         return
                     }
-                    let url = try pngTempURL(from: uiImage)
+                    let seqLib = OCRUploadNaming.nextDailySequence()
+                    let url = try writeTempOCRPNG(from: uiImage, sequence: seqLib, preprocessed: false)
                     await performUpload(fileURL: url, clientMarkdown: text)
                 }
             } else {
@@ -416,7 +491,8 @@ struct UploadView: View {
                     imageToUpload = OfferingEnvelopeProcessor.preprocessForUpload(image: uiImage)
                 }
 
-                let url = try pngTempURL(from: imageToUpload)
+                let seqLib = OCRUploadNaming.nextDailySequence()
+                let url = try writeTempOCRPNG(from: imageToUpload, sequence: seqLib, preprocessed: useOfferingEnvelopeCrop)
                 await performUpload(fileURL: url, clientMarkdown: nil)
             }
         } catch {
@@ -450,17 +526,33 @@ struct UploadView: View {
                     alertMessage = "未辨識到文字。"
                     return
                 }
-                await performUpload(fileURL: url, clientMarkdown: text)
+                let seq = OCRUploadNaming.nextDailySequence()
+                let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension
+                let tempURL = try writeTempOCRData(data, ext: ext, sequence: seq, preprocessed: false)
+                await performUpload(fileURL: tempURL, clientMarkdown: text)
             } catch {
                 alertMessage = error.localizedDescription
             }
             return
         }
 
-        await performUpload(fileURL: url, clientMarkdown: nil)
+        do {
+            let data = try Data(contentsOf: url)
+            let seq = OCRUploadNaming.nextDailySequence()
+            let ext = url.pathExtension.isEmpty ? "pdf" : url.pathExtension
+            let tempURL = try writeTempOCRData(data, ext: ext, sequence: seq, preprocessed: false)
+            await performUpload(fileURL: tempURL, clientMarkdown: nil)
+        } catch {
+            alertMessage = error.localizedDescription
+        }
     }
 
-    private func performUpload(fileURL: URL, clientMarkdown: String?, formAreaImage: Data? = nil) async {
+    private func performUpload(
+        fileURL: URL,
+        clientMarkdown: String?,
+        formAreaImage: Data? = nil,
+        formAreaUploadFilename: String? = nil
+    ) async {
         isUploading = true
         submittedTaskId = nil
         defer { isUploading = false }
@@ -486,7 +578,8 @@ struct UploadView: View {
                 customOCRURL: useDeviceOCR ? nil : (customOCRURL.isEmpty ? nil : customOCRURL),
                 clientMarkdown: clientMarkdown,
                 formTemplate: formTpl,
-                formAreaImage: formAreaImage
+                formAreaImage: formAreaImage,
+                formAreaUploadFilename: formAreaUploadFilename
             )
             submittedTaskId = payload.task_id
             alertMessage = "已建立任務，可至「任務」分頁查看進度。"

@@ -69,93 +69,87 @@ def rgb_to_hsv(r: float, g: float, b: float) -> Tuple[float, float, float]:
 
 def remove_orange_pixels(image: np.ndarray) -> np.ndarray:
     """
-    亮度感知去橘：亮橘色背景→白色，暗色帶橘調（文字）→灰階保留，非橘色不動
+    去除橘色像素，將其變為白色
+    橘色範圍：H 在 0.02-0.12，S > 0.3，V > 0.4
     """
-    logger.info("開始亮度感知去除橘色像素...")
+    logger.info("開始去除橘色像素...")
 
+    # 轉換為浮點數
     img_float = image.astype(np.float32) / 255.0
+
+    # 建立輸出圖像
     result = image.copy()
 
     height, width = image.shape[:2]
-    white_count = 0
-    gray_count = 0
+    orange_count = 0
 
     for y in range(height):
         for x in range(width):
             b, g, r = img_float[y, x]
             h, s, v = rgb_to_hsv(r, g, b)
 
-            # 橘色色調判斷
-            is_orange_hue = (0.0 <= h <= 0.14) and (s > 0.15)
-            if not is_orange_hue:
-                continue  # 非橘色色調 → 不動
+            # 判斷是否為橘色
+            is_orange = (0.02 <= h <= 0.12) and (s > 0.3) and (v > 0.4)
 
-            # 感知亮度
-            luminance = 0.299 * r + 0.587 * g + 0.114 * b
-
-            if luminance > 0.55:
-                # 亮橘色背景 → 白色
+            if is_orange:
+                # 橘色 -> 白色
                 result[y, x] = [255, 255, 255]
-                white_count += 1
-            elif luminance > 0.35:
-                # 中等亮度帶橘調（文字邊緣）→ 去色保留亮度
-                gray = int(max(0, min(255, luminance * 230)))
-                result[y, x] = [gray, gray, gray]
-                gray_count += 1
-            # luminance <= 0.35：暗色文字 → 完全不動
+                orange_count += 1
 
-    total = height * width
-    logger.info(f"去除橘色: 白化={white_count}({white_count/total*100:.1f}%), 灰階={gray_count}({gray_count/total*100:.1f}%)")
+    logger.info(f"去除了 {orange_count} 個橘色像素 ({orange_count / (height * width) * 100:.2f}%)")
     return result
 
 
+##############################################################
+# 去除橘色像素（實際使用版本） - 亮度感知版
+##############################################################
 def remove_orange_pixels_fast(image: np.ndarray) -> np.ndarray:
     """
-    亮度感知去橘（向量化版本）：
-    - 亮橘色背景（亮度高）→ 白色
-    - 暗色但帶橘色調（文字邊緣）→ 去色保留亮度（轉灰階）
-    - 非橘色像素 → 不動
+    去除橘色像素，只移除真正的橘色背景，保護黑色文字和其他顏色
+
+    處理邏輯：
+    1. 只移除高飽和度的橘色（S > 100）
+    2. 明確保護黑色/深色像素（V < 120 不處理）
+    3. 明確保護白色像素（V > 200 且 S < 30 不處理）
+    4. 明確保護藍色像素（H > 80 不處理）
     """
     logger.info("=" * 50)
-    logger.info("===== remove_orange_pixels_fast（亮度感知版）被呼叫 =====")
+    logger.info("===== remove_orange_pixels_fast 被呼叫 =====")
+    logger.info("只移除橘色背景，保護黑色文字")
     logger.info("=" * 50)
 
     # 轉換到 HSV 色彩空間（OpenCV 的 HSV：H: 0-179, S: 0-255, V: 0-255）
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
 
-    # 正規化為 0-1 範圍
-    h_norm = h.astype(np.float32) / 179.0  # H: 0-179 → 0-1
-    s_norm = s.astype(np.float32) / 255.0  # S: 0-255 → 0-1
-
     result = image.copy()
 
-    # 計算感知亮度 (ITU-R BT.601)
-    img_float = image.astype(np.float32) / 255.0
-    b_ch, g_ch, r_ch = cv2.split(img_float)
-    luminance = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
+    # === 明確保護的區域（這些絕對不動）===
+    # 黑色/深色像素：V < 120（保護手寫文字）
+    dark_protect = (v < 120)
+    # 白色像素：V > 200 且 S < 50（保護白色區域）
+    white_protect = (v > 200) & (s < 50)
+    # 藍色像素：H > 80（保護藍色印刷字）
+    blue_protect = (h > 80) & (h < 140)
 
-    # 橘色色調判斷（寬鬆，包含深橘到淺橘）
-    # H: 0-0.14 (對應角度 0-50°)，S > 0.15
-    is_orange_hue = (h_norm >= 0.0) & (h_norm <= 0.14) & (s_norm > 0.15)
+    # 合併所有保護區域
+    protect_mask = dark_protect | white_protect | blue_protect
 
-    # 亮橘色背景 (luminance > 0.55) → 白色
-    bright_orange_mask = is_orange_hue & (luminance > 0.55)
-    result[bright_orange_mask] = [255, 255, 255]
+    logger.info(f"  保護區域: 黑色={np.sum(dark_protect)}, 白色={np.sum(white_protect)}, 藍色={np.sum(blue_protect)}")
 
-    # 中等亮度帶橘調 (0.35 < luminance <= 0.55) → 灰階
-    mid_orange_mask = is_orange_hue & (luminance > 0.35) & (luminance <= 0.55)
-    gray_values = np.clip(luminance * 230, 0, 255).astype(np.uint8)
-    result[mid_orange_mask, 0] = gray_values[mid_orange_mask]
-    result[mid_orange_mask, 1] = gray_values[mid_orange_mask]
-    result[mid_orange_mask, 2] = gray_values[mid_orange_mask]
+    # === 橘色範圍（只移除明確的橘色）===
+    # 橘色：H 5-25, 高飽和度 S > 100, 中等以上亮度 V > 120
+    orange_mask = (h >= 5) & (h <= 25) & (s > 100) & (v > 120)
 
-    # luminance <= 0.35：暗色像素（確定是文字）→ 完全不動
+    # 排除保護區域
+    final_orange_mask = orange_mask & (~protect_mask)
 
+    # 將橘色區域設為白色
+    result[final_orange_mask] = [255, 255, 255]
+
+    total_orange = np.sum(final_orange_mask)
     total_pixels = image.shape[0] * image.shape[1]
-    white_count = np.sum(bright_orange_mask)
-    gray_count = np.sum(mid_orange_mask)
-    logger.info(f"去除橘色: 白化={white_count}({white_count/total_pixels*100:.1f}%), 灰階={gray_count}({gray_count/total_pixels*100:.1f}%)")
+    logger.info(f"去除了 {total_orange} 個橘色像素 ({total_orange / total_pixels * 100:.2f}%)")
     logger.info("===== remove_orange_pixels_fast 完成 =====")
 
     return result

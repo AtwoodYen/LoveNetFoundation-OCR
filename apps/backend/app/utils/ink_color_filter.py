@@ -10,7 +10,9 @@ import cv2
 import numpy as np
 from PIL import Image
 
-
+##############################################################
+# 排除紅/橘色，只保留藍黑墨跡
+##############################################################
 def _spec_to_params(ink_filter: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """範本 ink_filter 區塊；未指定時用預設。"""
     f = ink_filter or {}

@@ -685,26 +685,18 @@ enum OfferingEnvelopeProcessor {
                 // 新：先算感知亮度，再決定要白化、灰階化、還是不動
                 let luminance = 0.299 * r + 0.587 * g + 0.114 * b
                 let isOrangeHue = (h >= 0.0 && h <= 0.14) && s > 0.15
-                if luminance > 0.55   → 白色
-                if luminance > 0.35   → 灰階（* 0.9 稍壓暗）
-                // luminance ≤ 0.35   → 完全不動
-                if luminance > 0.55
-                {
-                    // 橘色 → 設為白色
-                    buffer[offset] = 255
-                    buffer[offset + 1] = 255
-                    buffer[offset + 2] = 255
-                }
-                else if luminance > 0.35
-                {
-                    // 橘色 → 設為灰階
-                    buffer[offset] = UInt8(max(0, min(255, luminance * 0.9)))
-                    buffer[offset + 1] = UInt8(max(0, min(255, luminance * 0.9)))
-                    buffer[offset + 2] = UInt8(max(0, min(255, luminance * 0.9)))
-                }
-                else
-                {
-                    // 完全不動
+                // 僅在偏橘色區域依亮度白化／灰階化；其餘像素不動
+                if isOrangeHue {
+                    if luminance > 0.55 {
+                        buffer[offset] = 255
+                        buffer[offset + 1] = 255
+                        buffer[offset + 2] = 255
+                    } else if luminance > 0.35 {
+                        let gray = UInt8(clamping: Int(luminance * 255.0 * 0.9))
+                        buffer[offset] = gray
+                        buffer[offset + 1] = gray
+                        buffer[offset + 2] = gray
+                    }
                 }
                 
                 /*

@@ -1,5 +1,8 @@
 import UIKit
 import Vision
+import os.log
+
+private let logger = Logger(subsystem: "com.lovenet.ocr", category: "DeviceOCR")
 
 enum DeviceOCRError: LocalizedError {
     case noCGImage
@@ -24,16 +27,30 @@ enum DeviceTextRecognizer {
         guard let cgImage = image.cgImage else {
             throw DeviceOCRError.noCGImage
         }
+        logger.info("🔍 開始 Vision OCR，圖片尺寸: \(cgImage.width)x\(cgImage.height)")
+
         return try await withCheckedThrowingContinuation { cont in
             let request = VNRecognizeTextRequest { request, error in
                 if let error {
+                    logger.error("❌ Vision OCR 錯誤: \(error.localizedDescription)")
                     cont.resume(throwing: error)
                     return
                 }
                 guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                    logger.warning("⚠️ Vision OCR 無結果")
                     cont.resume(returning: "")
                     return
                 }
+
+                logger.info("📝 Vision 辨識到 \(observations.count) 個文字區塊")
+
+                // 記錄每個區塊的原始位置和內容
+                for (i, obs) in observations.enumerated() {
+                    let box = obs.boundingBox
+                    let text = bestCandidateString(from: obs)
+                    logger.debug("  [\(i)] y=\(String(format: "%.3f", box.midY)) x=\(String(format: "%.3f", box.midX)) → \"\(text)\"")
+                }
+
                 let sorted = observations.sorted { a, b in
                     let dy = abs(a.boundingBox.midY - b.boundingBox.midY)
                     if dy > 0.018 {
@@ -42,7 +59,12 @@ enum DeviceTextRecognizer {
                     return a.boundingBox.midX < b.boundingBox.midX
                 }
                 let lines = sorted.map { bestCandidateString(from: $0) }
-                cont.resume(returning: lines.joined(separator: "\n"))
+                let result = lines.joined(separator: "\n")
+
+                logger.info("✅ Vision OCR 完成，總共 \(lines.count) 行")
+                logger.info("📄 OCR 結果前 500 字:\n\(String(result.prefix(500)))")
+
+                cont.resume(returning: result)
             }
             request.recognitionLevel = .accurate
             if #available(iOS 17.0, *) {
@@ -55,6 +77,7 @@ enum DeviceTextRecognizer {
             do {
                 try handler.perform([request])
             } catch {
+                logger.error("❌ Vision handler 執行失敗: \(error.localizedDescription)")
                 cont.resume(throwing: error)
             }
         }

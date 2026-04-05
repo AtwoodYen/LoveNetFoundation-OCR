@@ -134,12 +134,21 @@ async def _merge_to_markdown(
         context.ocr_config or {}
     ).get("form_template")
     if ft == "offering_envelope":
-        result["offering_display"] = build_offering_display(result["full_markdown"])
+        od = build_offering_display(result["full_markdown"])
+        result["offering_display"] = od
+        sm = od.get("sanitized_markdown")
+        if isinstance(sm, str) and sm.strip():
+            result["full_markdown"] = sm
 
     # 写入文件
     md_output_path = str(Path(output_dir) / "result.md")
     with open(md_output_path, "w", encoding="utf-8") as f:
-        f.writelines(markdown_lines)
+        if ft == "offering_envelope" and isinstance(
+            result.get("full_markdown"), str
+        ) and result["full_markdown"].strip():
+            f.write("# OCR 結果\n\n" + result["full_markdown"])
+        else:
+            f.writelines(markdown_lines)
     json_output_path = str(Path(output_dir) / "merged.json")
     with open(json_output_path, "w", encoding="utf-8") as f:
         json.dump(json_sanitize(result), f, ensure_ascii=False, indent=2)
