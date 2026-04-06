@@ -321,11 +321,12 @@
 
   /**
    * 【藍框繪製】獨立函數 - 不受底圖影響
+   * @param highlightIndex 要以黃色高亮的區塊索引，-1 表示不高亮
    */
-  function drawBlueRects(ctx, blocks, W, H, scale, displayW, displayH) {
-    var stroke = getComputedStyle(document.documentElement).getPropertyValue("--stroke").trim() || "rgba(66,133,244,0.85)";
-    ctx.lineWidth = Math.max(1, Math.round((W * scale) / 400));
-    ctx.strokeStyle = stroke;
+  function drawBlueRects(ctx, blocks, W, H, scale, displayW, displayH, highlightIndex) {
+    var blueStroke = getComputedStyle(document.documentElement).getPropertyValue("--stroke").trim() || "rgba(66,133,244,0.85)";
+    var yellowStroke = "#ffeb3b";
+    var lineWidth = Math.max(1, Math.round((W * scale) / 400));
 
     // 藍框旋轉中心
     var cx = W / 2;
@@ -336,7 +337,7 @@
     var offsetY = -displayH * 0.125;
 
     var displayRects = [];
-    blocks.forEach(function (b) {
+    blocks.forEach(function (b, i) {
       var x = b.x || 0;
       var y = b.y || 0;
       var w = b.width || 0;
@@ -359,11 +360,47 @@
         width: (maxX - minX) * scale,
         height: (maxY - minY) * scale,
       };
+
+      // 設定顏色：高亮的用黃色，其他用藍色
+      if (i === highlightIndex) {
+        ctx.strokeStyle = yellowStroke;
+        ctx.lineWidth = lineWidth * 2; // 高亮的框加粗
+      } else {
+        ctx.strokeStyle = blueStroke;
+        ctx.lineWidth = lineWidth;
+      }
+
       ctx.strokeRect(dr.x, dr.y, dr.width, dr.height);
       displayRects.push(dr);
     });
 
     return displayRects;
+  }
+
+  /**
+   * 重繪 canvas 並高亮指定區塊
+   */
+  function redrawWithHighlight(highlightIndex) {
+    if (!hoverState.canvas || !hoverState.img) return;
+
+    var ctx = hoverState.canvas.getContext("2d");
+
+    // 1. 重繪底圖
+    drawImage(ctx, hoverState.img, hoverState.displayW, hoverState.displayH);
+
+    // 2. 重繪藍框（帶高亮）
+    hoverState.displayRects = drawBlueRects(
+      ctx,
+      hoverState.blocks,
+      hoverState.W,
+      hoverState.H,
+      hoverState.scale,
+      hoverState.displayW,
+      hoverState.displayH,
+      highlightIndex
+    );
+
+    hoverState.highlightedIndex = highlightIndex;
   }
 
   /**
@@ -388,16 +425,40 @@
     // 1. 繪製底圖（獨立）
     drawImage(ctx, img, displayW, displayH);
 
-    // 2. 繪製藍框（獨立）
-    var displayRects = drawBlueRects(ctx, blocks, W, H, scale, displayW, displayH);
+    // 2. 繪製藍框（獨立，不高亮）
+    var displayRects = drawBlueRects(ctx, blocks, W, H, scale, displayW, displayH, -1);
 
     canvas.style.aspectRatio = displayW + " / " + displayH;
+
+    // 儲存重繪所需的狀態
+    hoverState.img = img;
+    hoverState.blocks = blocks;
+    hoverState.scale = scale;
+    hoverState.displayW = displayW;
+    hoverState.displayH = displayH;
+    hoverState.W = W;
+    hoverState.H = H;
+    hoverState.highlightedIndex = -1;
 
     return { displayRects: displayRects, scale: scale, displayW: displayW, displayH: displayH, W: W, H: H };
   }
 
   // Hover 高亮功能
-  var hoverState = { canvas: null, detach: null, displayRects: [], lastKey: "" };
+  var hoverState = {
+    canvas: null,
+    detach: null,
+    displayRects: [],
+    lastKey: "",
+    // 用於重繪的狀態
+    img: null,
+    blocks: [],
+    scale: 1,
+    displayW: 0,
+    displayH: 0,
+    W: 0,
+    H: 0,
+    highlightedIndex: -1
+  };
 
   function hitTestRects(px, py, rects) {
     const hits = new Set();
@@ -440,7 +501,8 @@
     hoverState.displayRects = displayRects || [];
     hoverState.lastKey = "";
 
-    function onMove(ev) {
+    // Canvas 滑鼠移動事件
+    function onCanvasMove(ev) {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
@@ -448,9 +510,19 @@
       const by = (ev.clientY - rect.top) * scaleY;
       const hits = hitTestRects(bx, by, hoverState.displayRects);
       applyHoverHits(hits);
+
+      // 如果有高亮的區塊，重繪以顯示黃框
+      if (hits.size > 0) {
+        var firstHit = Array.from(hits)[0];
+        if (hoverState.highlightedIndex !== firstHit) {
+          redrawWithHighlight(firstHit);
+        }
+      } else if (hoverState.highlightedIndex !== -1) {
+        redrawWithHighlight(-1);
+      }
     }
 
-    function onLeave() {
+    function onCanvasLeave() {
       hoverState.lastKey = "";
       // 移除座標區塊高亮
       coordsOut.querySelectorAll(".coord-item").forEach(function (el) {
@@ -464,13 +536,61 @@
       fullTextOut.querySelectorAll(".ft-chunk").forEach(function (el) {
         el.classList.remove("hl");
       });
+      // 重繪 canvas 移除黃框
+      if (hoverState.highlightedIndex !== -1) {
+        redrawWithHighlight(-1);
+      }
     }
 
-    canvas.addEventListener("mousemove", onMove);
-    canvas.addEventListener("mouseleave", onLeave);
+    // 區塊座標滑鼠事件（事件委派）
+    function onCoordsMove(ev) {
+      var target = ev.target.closest(".coord-item");
+      if (target) {
+        var i = parseInt(target.getAttribute("data-i"), 10);
+        if (!isNaN(i)) {
+          // 高亮文字區塊
+          var hits = new Set([i]);
+          applyHoverHits(hits);
+          // 高亮 canvas 上的框
+          if (hoverState.highlightedIndex !== i) {
+            redrawWithHighlight(i);
+          }
+        }
+      }
+    }
+
+    function onCoordsLeave(ev) {
+      // 檢查是否離開整個座標區域
+      var related = ev.relatedTarget;
+      if (!coordsOut.contains(related)) {
+        hoverState.lastKey = "";
+        // 移除所有文字高亮
+        coordsOut.querySelectorAll(".coord-item").forEach(function (el) {
+          el.classList.remove("hl");
+        });
+        segmentsOut.querySelectorAll(".seg-chunk").forEach(function (el) {
+          el.classList.remove("hl");
+        });
+        fullTextOut.querySelectorAll(".ft-chunk").forEach(function (el) {
+          el.classList.remove("hl");
+        });
+        // 重繪 canvas 移除黃框
+        if (hoverState.highlightedIndex !== -1) {
+          redrawWithHighlight(-1);
+        }
+      }
+    }
+
+    canvas.addEventListener("mousemove", onCanvasMove);
+    canvas.addEventListener("mouseleave", onCanvasLeave);
+    coordsOut.addEventListener("mousemove", onCoordsMove);
+    coordsOut.addEventListener("mouseleave", onCoordsLeave);
+
     hoverState.detach = function () {
-      canvas.removeEventListener("mousemove", onMove);
-      canvas.removeEventListener("mouseleave", onLeave);
+      canvas.removeEventListener("mousemove", onCanvasMove);
+      canvas.removeEventListener("mouseleave", onCanvasLeave);
+      coordsOut.removeEventListener("mousemove", onCoordsMove);
+      coordsOut.removeEventListener("mouseleave", onCoordsLeave);
     };
   }
 
