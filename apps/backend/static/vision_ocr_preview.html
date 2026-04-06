@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Google Vision OCR 區塊預覽</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3d8bfd;
+      --stroke: rgba(66, 133, 244, 0.85);
+      --photo-max-h: calc(100vh - 6rem);
+      --text-col-min: 560px;
+      --text-col-max: 840px;
+    }
+    * { box-sizing: border-box; }
+    html { height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      height: 100%;
+      max-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid #2a3544;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+    header .meta { font-size: 0.85rem; color: var(--muted); }
+    .header-hint { font-size: 0.78rem; color: var(--muted); opacity: 0.95; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .toolbar label { font-size: 0.85rem; color: var(--muted); }
+    .toolbar input[type="text"] {
+      width: min(360px, 90vw);
+      padding: 0.45rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid #3d4d63;
+      background: var(--panel);
+      color: var(--text);
+    }
+    .toolbar button {
+      padding: 0.45rem 1rem;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(var(--text-col-min), var(--text-col-max));
+      gap: 0;
+      flex: 1 1 auto;
+      min-height: 0;
+      align-items: stretch;
+    }
+    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+    .photo-col {
+      padding: 0.75rem 0.75rem 0.75rem 0;
+      overflow: auto;
+      border-right: 1px solid #2a3544;
+      min-width: 0;
+      max-height: var(--photo-max-h);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+    .photo-wrap {
+      position: relative;
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      max-height: var(--photo-max-h);
+      line-height: 0;
+      text-align: left;
+    }
+    .photo-wrap canvas {
+      display: block;
+      max-width: 100%;
+      max-height: var(--photo-max-h);
+      width: auto;
+      height: auto;
+      border-radius: 0 4px 4px 0;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    }
+    .text-col {
+      padding: 1rem 1.25rem;
+      overflow: auto;
+      background: var(--panel);
+      max-height: var(--photo-max-h);
+      min-width: 0;
+    }
+    .text-col h2 { margin: 0 0 0.75rem; font-size: 0.95rem; font-weight: 600; color: var(--muted); }
+    .fulltext {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.95rem;
+      line-height: 1.65;
+      letter-spacing: 0.02em;
+    }
+    .err { padding: 1rem; background: #3d2020; border-radius: 8px; color: #f5a8a8; }
+    .loading { color: var(--muted); padding: 2rem; }
+    .text-col h2:not(:first-of-type) { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #2a3544; }
+    .order-note { margin: 0.5rem 0 1rem; font-size: 0.82rem; line-height: 1.5; color: var(--muted); }
+    .fulltext.segments { font-size: 0.88rem; line-height: 1.7; }
+    .segments-flow { white-space: normal; word-break: break-word; }
+    .seg-chunk { display: inline-block; white-space: nowrap; max-width: 100%; vertical-align: baseline; }
+    .hl { background: #ffeb3b; color: #000; }
+    .coords-section { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #2a3544; }
+    .coords-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.4rem; font-size: 0.78rem; font-family: monospace; }
+    .coord-item { padding: 0.3rem 0.5rem; background: rgba(61,139,253,0.1); border-radius: 4px; border: 1px solid transparent; transition: all 0.15s; }
+    .coord-item.hl { background: #ffeb3b; color: #000; border-color: #e6d435; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Google Vision OCR 區塊預覽</h1>
+    <span class="header-hint">底圖不旋轉；藍框順時針旋轉 90°</span>
+    <span class="meta" id="meta"></span>
+    <div class="toolbar">
+      <label for="tid">task_id</label>
+      <input id="tid" type="text" placeholder="貼上 UUID" autocomplete="off" />
+      <button type="button" id="loadBtn">載入</button>
+    </div>
+  </header>
+  <main>
+    <section class="photo-col">
+      <div id="photoHost" class="loading">請在網址加上 <code>?task_id=您的任務ID</code> 或於上方輸入後按「載入」。</div>
+    </section>
+    <aside class="text-col">
+      <div class="coords-section">
+        <h2>區塊座標 (X, Y, W, H)</h2>
+        <div class="coords-grid" id="coordsOut"></div>
+      </div>
+      <h2>辨識全文（fullTextAnnotation）</h2>
+      <div class="fulltext" id="fullTextOut"></div>
+      <p class="order-note" id="orderNote"></p>
+      <h2>textAnnotations 順序（每段加 [ ]，段間三空格，依寬度換行）</h2>
+      <div class="fulltext segments" id="segmentsOut"></div>
+    </aside>
+  </main>
+  <script>
+(function () {
+  const API_BASE = "/api/v1/debug/vision-ocr/";
+  const photoHost = document.getElementById("photoHost");
+  const coordsOut = document.getElementById("coordsOut");
+  const fullTextOut = document.getElementById("fullTextOut");
+  const segmentsOut = document.getElementById("segmentsOut");
+  const orderNote = document.getElementById("orderNote");
+  const meta = document.getElementById("meta");
+  const tidInput = document.getElementById("tid");
+  const loadBtn = document.getElementById("loadBtn");
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderSegmentsHtml(blocks) {
+    const chunks = (blocks || []).map(function (b, i) {
+      return '<span class="seg-chunk" data-i="' + i + '">[' + escapeHtml(b.text || "") + "]</span>";
+    });
+    return '<div class="segments-flow">' + chunks.join("&nbsp;&nbsp;&nbsp;") + "</div>";
+  }
+
+  function renderCoordsHtml(blocks) {
+    return (blocks || []).map(function (b, i) {
+      var x = Math.round(b.y || 0);      // Vision API 的 y 對應顯示的 X
+      var y = Math.round(b.x || 0);      // Vision API 的 x 對應顯示的 Y
+      var w = Math.round(b.height || 0); // Vision API 的 height 對應顯示的 W
+      var h = Math.round(b.width || 0);  // Vision API 的 width 對應顯示的 H
+      var text = (b.text || "").substring(0, 8);
+      if ((b.text || "").length > 8) text += "…";
+      return '<div class="coord-item" data-i="' + i + '">' +
+        '<strong>#' + i + '</strong> ' + escapeHtml(text) +
+        '<br>X:' + x + ' Y:' + y + ' W:' + w + ' H:' + h +
+        '</div>';
+    }).join("");
+  }
+
+  /**
+   * 建立每個區塊在全文中的字元範圍映射
+   * 依序搜尋每個區塊的文字，避免重複匹配
+   */
+  function buildBlockRanges(blocks, fullText) {
+    var ranges = [];
+    var usedRanges = []; // 記錄已使用的範圍，避免重複
+
+    (blocks || []).forEach(function (b, i) {
+      var text = b.text || "";
+      if (!text) {
+        ranges.push(null);
+        return;
+      }
+
+      // 從頭開始搜尋，找到第一個未被使用的匹配
+      var searchStart = 0;
+      var found = false;
+      while (!found) {
+        var pos = fullText.indexOf(text, searchStart);
+        if (pos < 0) {
+          ranges.push(null);
+          break;
+        }
+
+        var end = pos + text.length;
+        // 檢查這個範圍是否與已使用的範圍重疊
+        var overlaps = usedRanges.some(function (r) {
+          return !(end <= r.start || pos >= r.end);
+        });
+
+        if (!overlaps) {
+          ranges.push({ start: pos, end: end, index: i });
+          usedRanges.push({ start: pos, end: end });
+          found = true;
+        } else {
+          searchStart = pos + 1;
+        }
+      }
+    });
+
+    return ranges;
+  }
+
+  /**
+   * 將全文渲染為帶有區塊索引標記的 HTML
+   */
+  function renderFullTextWithRanges(fullText, blockRanges) {
+    // 收集所有有效範圍並按起始位置排序
+    var validRanges = blockRanges
+      .filter(function (r) { return r !== null; })
+      .sort(function (a, b) { return a.start - b.start; });
+
+    if (validRanges.length === 0) {
+      return escapeHtml(fullText);
+    }
+
+    var html = "";
+    var lastEnd = 0;
+
+    validRanges.forEach(function (r) {
+      // 添加範圍前的普通文字
+      if (r.start > lastEnd) {
+        html += escapeHtml(fullText.substring(lastEnd, r.start));
+      }
+      // 添加帶標記的區塊文字
+      html += '<span class="ft-chunk" data-i="' + r.index + '">' + escapeHtml(fullText.substring(r.start, r.end)) + '</span>';
+      lastEnd = r.end;
+    });
+
+    // 添加最後剩餘的文字
+    if (lastEnd < fullText.length) {
+      html += escapeHtml(fullText.substring(lastEnd));
+    }
+
+    return html;
+  }
+
+  function getPhotoColumnMaxHeightPx() {
+    var col = document.querySelector(".photo-col");
+    var h = col ? col.clientHeight : 0;
+    if (h >= 80) return h;
+    return Math.max(160, Math.floor((window.innerHeight || 600) - 160));
+  }
+
+  function getPhotoColumnMaxWidthPx() {
+    var col = document.querySelector(".photo-col");
+    var w = col ? col.clientWidth : 0;
+    if (w >= 80) return w;
+    return Math.max(200, Math.floor((window.innerWidth || 800) * 0.48));
+  }
+
+  function getTaskIdFromQuery() {
+    const q = new URLSearchParams(window.location.search);
+    console.log(q.get("task_id"));
+    return (q.get("task_id") || "").trim();
+  }
+
+  function setTaskIdInput(id) {
+    if (id) tidInput.value = id;
+  }
+
+  /**
+   * 順時針旋轉 90° 座標轉換（繞中心點 cx, cy）
+   */
+  function rotPoint90CW(x, y, cx, cy) {
+    var dx = x - cx;
+    var dy = y - cy;
+    return { x: cx - dy, y: cy + dx };
+  }
+
+  /**
+   * 【底圖繪製】獨立函數 - 不受藍框影響
+   */
+  function drawImage(ctx, img, displayW, displayH) {
+    var W = img.naturalWidth || 1;
+    var H = img.naturalHeight || 1;
+    // 底圖：直接繪製，不旋轉
+    ctx.drawImage(img, 0, 0, W, H, 0, 0, displayW, displayH);
+  }
+
+  /**
+   * 【藍框繪製】獨立函數 - 不受底圖影響
+   */
+  function drawBlueRects(ctx, blocks, W, H, scale, displayW, displayH) {
+    var stroke = getComputedStyle(document.documentElement).getPropertyValue("--stroke").trim() || "rgba(66,133,244,0.85)";
+    ctx.lineWidth = Math.max(1, Math.round((W * scale) / 400));
+    ctx.strokeStyle = stroke;
+
+    // 藍框旋轉中心
+    var cx = W / 2;
+    var cy = H / 2;
+
+    // 藍框位移：向左 16.6%，向上 12.5%
+    var offsetX = -displayW * 0.166;
+    var offsetY = -displayH * 0.125;
+
+    var displayRects = [];
+    blocks.forEach(function (b) {
+      var x = b.x || 0;
+      var y = b.y || 0;
+      var w = b.width || 0;
+      var h = b.height || 0;
+
+      // 藍框：順時針旋轉 90°（繞圖片中心）
+      var p1 = rotPoint90CW(x, y, cx, cy);
+      var p2 = rotPoint90CW(x + w, y, cx, cy);
+      var p3 = rotPoint90CW(x, y + h, cx, cy);
+      var p4 = rotPoint90CW(x + w, y + h, cx, cy);
+
+      var minX = Math.min(p1.x, p2.x, p3.x, p4.x);
+      var maxX = Math.max(p1.x, p2.x, p3.x, p4.x);
+      var minY = Math.min(p1.y, p2.y, p3.y, p4.y);
+      var maxY = Math.max(p1.y, p2.y, p3.y, p4.y);
+
+      var dr = {
+        x: minX * scale + offsetX,
+        y: minY * scale + offsetY,
+        width: (maxX - minX) * scale,
+        height: (maxY - minY) * scale,
+      };
+      ctx.strokeRect(dr.x, dr.y, dr.width, dr.height);
+      displayRects.push(dr);
+    });
+
+    return displayRects;
+  }
+
+  /**
+   * 主繪製函數 - 先底圖，再藍框，互不影響
+   */
+  function drawOverlay(canvas, img, blocks) {
+    var W = img.naturalWidth || 1;
+    var H = img.naturalHeight || 1;
+
+    var maxH = getPhotoColumnMaxHeightPx();
+    var maxW = getPhotoColumnMaxWidthPx();
+    var scale = Math.min(maxH / H, maxW / W);
+    if (!(scale > 0) || !isFinite(scale)) scale = 1;
+
+    var displayW = Math.max(1, Math.round(W * scale));
+    var displayH = Math.max(1, Math.round(H * scale));
+
+    canvas.width = displayW;
+    canvas.height = displayH;
+    var ctx = canvas.getContext("2d");
+
+    // 1. 繪製底圖（獨立）
+    drawImage(ctx, img, displayW, displayH);
+
+    // 2. 繪製藍框（獨立）
+    var displayRects = drawBlueRects(ctx, blocks, W, H, scale, displayW, displayH);
+
+    canvas.style.aspectRatio = displayW + " / " + displayH;
+
+    return { displayRects: displayRects, scale: scale, displayW: displayW, displayH: displayH, W: W, H: H };
+  }
+
+  // Hover 高亮功能
+  var hoverState = { canvas: null, detach: null, displayRects: [], lastKey: "" };
+
+  function hitTestRects(px, py, rects) {
+    const hits = new Set();
+    (rects || []).forEach(function (r, i) {
+      if (px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height) hits.add(i);
+    });
+    return hits;
+  }
+
+  function applyHoverHits(hits) {
+    const key = Array.from(hits).sort((a, b) => a - b).join(",");
+    if (key === hoverState.lastKey) return;
+    hoverState.lastKey = key;
+
+    // 高亮座標區塊
+    coordsOut.querySelectorAll(".coord-item").forEach(function (el) {
+      const i = parseInt(el.getAttribute("data-i"), 10);
+      el.classList.toggle("hl", hits.has(i));
+    });
+
+    // 高亮 textAnnotations
+    segmentsOut.querySelectorAll(".seg-chunk").forEach(function (el) {
+      const i = parseInt(el.getAttribute("data-i"), 10);
+      el.classList.toggle("hl", hits.has(i));
+    });
+
+    // 高亮辨識全文（使用預先標記的 span）
+    fullTextOut.querySelectorAll(".ft-chunk").forEach(function (el) {
+      const i = parseInt(el.getAttribute("data-i"), 10);
+      el.classList.toggle("hl", hits.has(i));
+    });
+  }
+
+  function attachCanvasHover(canvas, displayRects) {
+    if (hoverState.detach) {
+      hoverState.detach();
+      hoverState.detach = null;
+    }
+    hoverState.canvas = canvas;
+    hoverState.displayRects = displayRects || [];
+    hoverState.lastKey = "";
+
+    function onMove(ev) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const bx = (ev.clientX - rect.left) * scaleX;
+      const by = (ev.clientY - rect.top) * scaleY;
+      const hits = hitTestRects(bx, by, hoverState.displayRects);
+      applyHoverHits(hits);
+    }
+
+    function onLeave() {
+      hoverState.lastKey = "";
+      // 移除座標區塊高亮
+      coordsOut.querySelectorAll(".coord-item").forEach(function (el) {
+        el.classList.remove("hl");
+      });
+      // 移除 textAnnotations 高亮
+      segmentsOut.querySelectorAll(".seg-chunk").forEach(function (el) {
+        el.classList.remove("hl");
+      });
+      // 移除辨識全文高亮
+      fullTextOut.querySelectorAll(".ft-chunk").forEach(function (el) {
+        el.classList.remove("hl");
+      });
+    }
+
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", onLeave);
+    hoverState.detach = function () {
+      canvas.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("mouseleave", onLeave);
+    };
+  }
+
+  async function load(taskId) {
+    if (!taskId) {
+      photoHost.innerHTML = '<p class="err">缺少 task_id</p>';
+      coordsOut.innerHTML = "";
+      fullTextOut.innerHTML = "";
+      segmentsOut.innerHTML = "";
+      if (orderNote) orderNote.textContent = "";
+      meta.textContent = "";
+      if (hoverState.detach) hoverState.detach();
+      return;
+    }
+    setTaskIdInput(taskId);
+    photoHost.innerHTML = '<p class="loading">呼叫 Vision API 中…</p>';
+    coordsOut.innerHTML = "";
+    fullTextOut.innerHTML = "";
+    segmentsOut.innerHTML = "";
+    if (orderNote) orderNote.textContent = "";
+    meta.textContent = "";
+    if (hoverState.detach) hoverState.detach();
+    loadBtn.disabled = true;
+    try {
+      const res = await fetch(API_BASE + encodeURIComponent(taskId));
+      const data = await res.json().catch(function () { return null; });
+      if (!res.ok) {
+        let msg = res.statusText;
+        if (data && data.detail) {
+          const d = data.detail;
+          msg = typeof d === "string" ? d : Array.isArray(d) ? d.map(x => x.msg || JSON.stringify(x)).join("; ") : JSON.stringify(d);
+        }
+        throw new Error(msg || "請求失敗");
+      }
+      meta.textContent = data.char_count + " 字元 · " + data.block_count + " 區塊 · " + (data.image_path || "");
+
+      const blocks = data.blocks || [];
+      const fullText = data.full_text || "";
+      const blockRanges = buildBlockRanges(blocks, fullText);
+
+      coordsOut.innerHTML = renderCoordsHtml(blocks);
+      fullTextOut.innerHTML = renderFullTextWithRanges(fullText, blockRanges);
+      segmentsOut.innerHTML = renderSegmentsHtml(blocks);
+
+      if (orderNote) {
+        var noteParts = [];
+        if (data.ordering_note) noteParts.push(data.ordering_note);
+        if (data.coordinate_note) noteParts.push(data.coordinate_note);
+        orderNote.textContent = noteParts.join("\n\n");
+      }
+
+      photoHost.innerHTML = '<p class="loading">載入預覽圖…</p>';
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = function () {
+        const wrap = document.createElement("div");
+        wrap.className = "photo-wrap";
+        const canvas = document.createElement("canvas");
+        photoHost.innerHTML = "";
+        photoHost.appendChild(wrap);
+        wrap.appendChild(canvas);
+
+        function paint() {
+          var overlay = drawOverlay(canvas, img, blocks);
+          meta.textContent =
+            (data.char_count || 0) + " 字元 · " +
+            (data.block_count || 0) + " 區塊 · " +
+            (data.image_path || "") +
+            " · 圖片 " + overlay.W + "×" + overlay.H +
+            " · scale " + (Math.round(overlay.scale * 100) / 100) +
+            " · canvas " + overlay.displayW + "×" + overlay.displayH;
+          attachCanvasHover(canvas, overlay.displayRects);
+        }
+        requestAnimationFrame(function () { requestAnimationFrame(paint); });
+        if (typeof ResizeObserver !== "undefined") {
+          var ro = new ResizeObserver(function () { requestAnimationFrame(paint); });
+          ro.observe(wrap);
+        }
+      };
+      img.onerror = function () {
+        photoHost.innerHTML = '<p class="err">圖片載入失敗：' + (data.image_url || "") + "</p>";
+      };
+      img.src = data.image_url;
+    } catch (e) {
+      photoHost.innerHTML = '<p class="err">' + (e.message || String(e)) + "</p>";
+      coordsOut.innerHTML = "";
+      fullTextOut.innerHTML = "";
+      segmentsOut.innerHTML = "";
+      if (orderNote) orderNote.textContent = "";
+    } finally {
+      loadBtn.disabled = false;
+    }
+  }
+
+  loadBtn.addEventListener("click", function () { load(tidInput.value.trim()); });
+  tidInput.addEventListener("keydown", function (ev) { if (ev.key === "Enter") load(tidInput.value.trim()); });
+
+  const DEFAULT_TASK_ID = "8fd0a0a8-dda2-4122-a946-66a50cd10e32";
+  const getTask = getTaskIdFromQuery()
+  console.log(getTask);
+  const initial = DEFAULT_TASK_ID;
+  tidInput.value = initial;
+  load(initial);
+})();
+  </script>
+</body>
+</html>
