@@ -36,7 +36,10 @@ from app.utils.image_preprocessing import (
 )
 from app.utils.logger import logger
 from app.utils.config import settings
-from app.utils.offering_display import build_offering_display
+from app.utils.offering_display import (
+    build_offering_display,
+    should_apply_lovenet_offering_rules,
+)
 
 
 class GoogleVisionFlow(TaskProcessingFlow):
@@ -326,12 +329,27 @@ class GoogleVisionFlow(TaskProcessingFlow):
             try:
                 result = await ocr_with_google_vision(image_path)
                 all_text_parts.append(result.text)
+
+                # 建立區塊資料（座標互換：x↔y, width↔height）
+                blocks_data = []
+                for idx, b in enumerate(result.text_blocks):
+                    x, y, w, h = b.bbox
+                    blocks_data.append({
+                        "index": idx,
+                        "text": b.text or "",
+                        "x": int(y),       # 顯示 X = Vision API 的 y
+                        "y": int(x),       # 顯示 Y = Vision API 的 x
+                        "width": int(h),   # 顯示 W = Vision API 的 height
+                        "height": int(w),  # 顯示 H = Vision API 的 width
+                    })
+
                 page_results.append({
                     "page": i + 1,
                     "image_path": image_path,
                     "text": result.text,
                     "char_count": len(result.text),
-                    "text_blocks": len(result.text_blocks),
+                    "text_blocks_count": len(result.text_blocks),
+                    "text_blocks": blocks_data,  # 儲存區塊資料
                 })
                 logger.info(f"頁 {i + 1} OCR 完成: {len(result.text)} 字元, {len(result.text_blocks)} 區塊")
             except GoogleVisionOCRError as e:
@@ -341,6 +359,8 @@ class GoogleVisionFlow(TaskProcessingFlow):
                     "image_path": image_path,
                     "text": "",
                     "error": str(e),
+                    "text_blocks_count": 0,
+                    "text_blocks": [],
                 })
 
         full_text = "\n\n".join(all_text_parts)
@@ -363,13 +383,27 @@ class GoogleVisionFlow(TaskProcessingFlow):
                 form_area_text = form_result.text
                 logger.info(f"表格區域 OCR 完成: {len(form_area_text)} 字元")
 
+                # 建立區塊資料（座標互換）
+                form_blocks_data = []
+                for idx, b in enumerate(form_result.text_blocks):
+                    x, y, w, h = b.bbox
+                    form_blocks_data.append({
+                        "index": idx,
+                        "text": b.text or "",
+                        "x": int(y),
+                        "y": int(x),
+                        "width": int(h),
+                        "height": int(w),
+                    })
+
                 # 添加到結果中
                 page_results.append({
                     "page": "form_area",
                     "image_path": form_area_path,
                     "text": form_area_text,
                     "char_count": len(form_area_text),
-                    "text_blocks": len(form_result.text_blocks),
+                    "text_blocks_count": len(form_result.text_blocks),
+                    "text_blocks": form_blocks_data,
                     "is_form_area": True,
                 })
             except GoogleVisionOCRError as e:
@@ -379,6 +413,8 @@ class GoogleVisionFlow(TaskProcessingFlow):
                     "image_path": form_area_path,
                     "text": "",
                     "error": str(e),
+                    "text_blocks_count": 0,
+                    "text_blocks": [],
                     "is_form_area": True,
                 })
 
@@ -481,9 +517,11 @@ class GoogleVisionFlow(TaskProcessingFlow):
             ])
             logger.info(f"預處理圖片已添加到輸出: page_0002~page_0005")
 
-        # 檢查是否為奉獻袋表單
+        # 愛盟奉獻袋：不論是否勾選表單欄位，只要內容符合即套用同一套 Markdown／摘要規則
         form_template = (self.context.ocr_config or {}).get("form_template")
-        if form_template == "offering_envelope":
+        if should_apply_lovenet_offering_rules(
+            full_text, form_template=form_template
+        ):
             # 使用完整信封 OCR 結果建立奉獻袋摘要
             offering_display = build_offering_display(full_text)
 
@@ -519,6 +557,42 @@ class GoogleVisionFlow(TaskProcessingFlow):
             encoding="utf-8"
         )
         output_files.append(str(json_output_path))
+
+        # 輸出 Vision.json（區塊座標與文字）
+        vision_data = {
+            "task_id": self.context.task_id,
+            "char_count": len(full_text),
+            "full_text": full_text,
+            "textAnnotations": [],
+            "blocks": [],
+            "coordinate_note": "座標已互換：x = Vision API 的 y，y = Vision API 的 x，width = Vision API 的 height，height = Vision API 的 width",
+        }
+
+        # 合併所有頁面的區塊資料
+        all_blocks = []
+        all_texts = []
+        block_index = 0
+        for page_result in ocr_results["page_results"]:
+            page_blocks = page_result.get("text_blocks", [])
+            for b in page_blocks:
+                # 重新編號索引
+                block_copy = b.copy()
+                block_copy["index"] = block_index
+                all_blocks.append(block_copy)
+                all_texts.append(b.get("text", ""))
+                block_index += 1
+
+        vision_data["blocks"] = all_blocks
+        vision_data["textAnnotations"] = all_texts
+        vision_data["block_count"] = len(all_blocks)
+
+        vision_output_path = output_dir / "Vision.json"
+        vision_output_path.write_text(
+            json.dumps(vision_data, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        output_files.append(str(vision_output_path))
+        logger.info(f"已儲存 Vision.json: {vision_output_path}")
 
         await self.update_progress(
             step_name=step_name,
