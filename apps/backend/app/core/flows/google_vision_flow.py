@@ -586,9 +586,53 @@ class GoogleVisionFlow(TaskProcessingFlow):
         vision_data["textAnnotations"] = all_texts
         vision_data["block_count"] = len(all_blocks)
 
+        # 自訂 Vision.json 格式：blocks 每筆一行，textAnnotations 每 50 字換行
+        def format_vision_json(data: dict) -> str:
+            lines = ["{"]
+
+            # task_id, char_count, block_count
+            lines.append(f'  "task_id": {json.dumps(data["task_id"], ensure_ascii=False)},')
+            lines.append(f'  "char_count": {data["char_count"]},')
+            lines.append(f'  "block_count": {data["block_count"]},')
+
+            # full_text
+            lines.append(f'  "full_text": {json.dumps(data["full_text"], ensure_ascii=False)},')
+
+            # textAnnotations - 每 50 字換行
+            lines.append('  "textAnnotations": [')
+            texts = data["textAnnotations"]
+            if texts:
+                current_line = "    "
+                for i, t in enumerate(texts):
+                    item = json.dumps(t, ensure_ascii=False)
+                    if i < len(texts) - 1:
+                        item += ", "
+                    if len(current_line) + len(item) > 80:
+                        lines.append(current_line)
+                        current_line = "    " + item
+                    else:
+                        current_line += item
+                if current_line.strip():
+                    lines.append(current_line)
+            lines.append('  ],')
+
+            # blocks - 每筆一行
+            lines.append('  "blocks": [')
+            for i, block in enumerate(data["blocks"]):
+                block_json = json.dumps(block, ensure_ascii=False)
+                comma = "," if i < len(data["blocks"]) - 1 else ""
+                lines.append(f"    {block_json}{comma}")
+            lines.append('  ],')
+
+            # coordinate_note
+            lines.append(f'  "coordinate_note": {json.dumps(data["coordinate_note"], ensure_ascii=False)}')
+            lines.append("}")
+
+            return "\n".join(lines)
+
         vision_output_path = output_dir / "Vision.json"
         vision_output_path.write_text(
-            json.dumps(vision_data, ensure_ascii=False, indent=2),
+            format_vision_json(vision_data),
             encoding="utf-8"
         )
         output_files.append(str(vision_output_path))
