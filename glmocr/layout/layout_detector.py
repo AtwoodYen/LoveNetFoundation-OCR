@@ -1,11 +1,11 @@
 """PP-DocLayoutV3 layout detector."""
 
-from __future__ import annotations
+from __future__ import annotations 
 
-from typing import TYPE_CHECKING, List, Dict
+from typing import TYPE_CHECKING, List, Dict    
 
-import cv2
-import torch
+import cv2  
+import torch    
 import numpy as np
 from PIL import Image
 from transformers import (

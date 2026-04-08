@@ -151,6 +151,37 @@ async def _call_ocr_service(
                     image_path_field = split_path
                     ref_image_paths.append(image_path_field)
                     logger.info(f"裁剪图片块 {block_idx}: {split_filename}")
+                    # GLM 對 image 區常不回傳 content：對裁切圖再跑一次版面 OCR 以補文字
+                    if split_path and os.path.isfile(split_path):
+                        try:
+                            sub = await cli.process_single_image(
+                                split_path, custom_url=custom_url
+                            )
+                            pieces: List[str] = []
+                            for sb in sub:
+                                c = sb.get("content")
+                                if not c:
+                                    continue
+                                c = str(c).strip()
+                                if not c:
+                                    continue
+                                lbl = sb.get("label", "text")
+                                if lbl == "image":
+                                    continue
+                                pieces.append(c)
+                            if pieces:
+                                block_content = "\n".join(pieces)
+                                logger.info(
+                                    "裁切圖二次 OCR %s: %d 段",
+                                    split_filename,
+                                    len(pieces),
+                                )
+                        except Exception as e2:
+                            logger.warning(
+                                "裁切圖二次 OCR 失敗 %s: %s",
+                                split_filename,
+                                e2,
+                            )
                 except Exception as e:
                     logger.warning(f"裁剪图片块 {block_idx} 失败: {str(e)}")
 

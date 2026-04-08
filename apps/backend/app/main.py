@@ -8,9 +8,11 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.tasks import router as tasks_router
 from app.api.system import router as system_router
+from app.api.debug_vision import router as debug_vision_router
 from app.core.task_manager import init_task_system, shutdown_task_system
 from app.db.database import init_db, close_db
 from app.utils.logger import logger
@@ -65,6 +67,15 @@ app.add_middleware(
 # 注册路由
 app.include_router(tasks_router, prefix="/api/v1")
 app.include_router(system_router, prefix="/api/v1")
+app.include_router(debug_vision_router, prefix="/api/v1")
+
+_static_dir = Path(__file__).resolve().parent.parent / "static"
+if _static_dir.is_dir():
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(_static_dir)),
+        name="static",
+    )
 
 
 @app.get("/")

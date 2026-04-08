@@ -3,9 +3,11 @@
 """
 
 import json
+import re
 import uuid
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Dict, Optional, List
 from datetime import datetime, UTC
 
@@ -22,6 +24,23 @@ from app.utils.excel_export import build_task_excel
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+def _content_disposition_inline(filename: str) -> str:
+    """
+    HTTP 標頭須為 latin-1；非 ASCII 檔名用 RFC 5987 的 filename*，避免 500。
+    """
+    if not filename:
+        filename = "file"
+    safe = "".join(
+        c if 32 <= ord(c) < 127 and c not in '\\"' else "_"
+        for c in filename
+    )
+    safe = re.sub(r"_+", "_", safe).strip("._") or "file"
+    if len(safe) > 120:
+        safe = safe[:120]
+    star = quote(filename, safe="")
+    return f'inline; filename="{safe}"; filename*=UTF-8\'\'{star}'
 
 
 @router.post(
@@ -43,7 +62,14 @@ async def submit_task(
     ),
     form_template: Optional[str] = Form(
         None,
-        description="表單範本 id（如 offering_envelope）；僅 pipeline 會裁切手寫區再送版面 OCR",
+        description=(
+            "表單範本 id（如 offering_envelope）；pipeline 會裁切手寫區再送版面 OCR。"
+            "若未傳但辨識內容為愛盟奉獻袋，仍會自動套用同一套 Markdown／摘要規則。"
+        ),
+    ),
+    slice_engine: Optional[str] = Form(
+        None,
+        description="已停用：分塊裁切辨識（slice_crop）不再使用，此欄位會被忽略。",
     ),
     output_format: str = Form("markdown"),
 ):
@@ -51,7 +77,7 @@ async def submit_task(
     提交新任务
 
     - **file**: 上传文件
-    - **processing_mode**: 处理模式，默认pipeline
+    - **processing_mode**: 处理模式：pipeline / google_vision / client_vision（分塊裁切 slice_crop 已停用）
     - **priority**: 优先级 (1=低, 2=正常, 3=高, 4=紧急)
     - **ocr_config**: OCR配置（JSON字符串，可选）
     - **output_format**: 输出格式，默认markdown
@@ -73,6 +99,16 @@ async def submit_task(
             parsed_ocr_config = {"client_markdown": text}
         elif custom_url is not None and str(custom_url).strip():
             parsed_ocr_config = {"custom_url": str(custom_url).strip()}
+
+        pm = processing_mode.strip().lower()
+        if pm == "slice_crop":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "processing_mode=slice_crop（分塊裁切辨識）已停用，"
+                    "請改用 pipeline（後端 GLM）、google_vision 或 client_vision（裝置 Apple Vision）。"
+                ),
+            )
 
         ft = (form_template or "").strip()
         if ft:
@@ -183,8 +219,8 @@ async def read_file(path: str):
                 content=content,
                 media_type=mime_type,
                 headers={
-                    "Content-Disposition": f"inline; filename=\"{file_path.name}\""
-                }
+                    "Content-Disposition": _content_disposition_inline(file_path.name)
+                },
             )
 
         # 其他文件类型，返回JSON格式

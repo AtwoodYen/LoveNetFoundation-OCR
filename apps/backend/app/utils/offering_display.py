@@ -1,6 +1,10 @@
 """
 從奉獻袋 OCR 全文擷取固定摘要列，並產生與紙本對齊的多行 formatted_text。
 
+愛盟規則經 should_apply_lovenet_offering_rules 套用於 pipeline／client_vision／
+google_vision 等來源；未勾選奉獻袋表單但內容符合新版關鍵字且含合計／奉獻脈絡時
+亦與 offering_envelope 相同後處理（sanitize、12 項摘要、勾選與地址規則等）。
+
 新版表單（偵測到「課程推廣／媒體製作／基金會營運／其他」或「公開揭露」等關鍵字時）：
 僅擷取 12 類欄位，且只輸出有資料的列；勾選項僅在判定「已勾選」時輸出。
 解析前會略過「合計」列之下至「本人…公開揭露」之前的帶狀區文字。
@@ -751,17 +755,20 @@ _INLINE_AMT = re.compile(
     r"(\d{1,3}(?:[,，]\d{3})+|[1-9]\d{2,5})(?!\d)",
 )
 
+# 標籤與值之間勿用 \s*（會吃掉換行，誤把下一行併入上一欄）
+_HSP = r"[^\S\n\r]"
+
 _RECEIPT_TITLE_PAT = re.compile(
-    r"(?:奉獻收據抬頭|收據抬頭)\s*[：:．]?\s*([^\n]+)",
+    rf"(?:奉獻收據抬頭|收據抬頭){_HSP}*[：:．]?{_HSP}*([^\n]+)",
 )
 _MAIL_ADDR_PAT = re.compile(
-    r"(?:奉獻收據寄送地址|收據寄送地址|郵寄地址)\s*[：:．]?\s*([^\n]+)",
+    rf"(?:奉獻收據寄送地址|收據寄送地址|郵寄地址){_HSP}*[：:．]?{_HSP}*([^\n]+)",
 )
 _CONTACT_PHONE_PAT = re.compile(
-    r"(?:聯絡電話|電話|手機)\s*[：:／/．]?\s*([^\n]+)",
+    rf"(?:聯絡電話|電話|手機){_HSP}*[：:／/．]?{_HSP}*([^\n]+)",
 )
 _EMAIL_PAT = re.compile(
-    r"(?:電子信箱|E-?mail|Email)\s*[：:．]?\s*([^\s\n@]+@[^\s\n]+)",
+    rf"(?:電子信箱|E-?mail|Email){_HSP}*[：:．]?{_HSP}*([^\s\n@]+@[^\s\n]+)",
 )
 _EMAIL_FALLBACK = re.compile(
     r"(?<![A-Za-z0-9._%+-])([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})",
@@ -864,17 +871,74 @@ def _receipt_option_kind(s: str) -> Optional[str]:
     return None
 
 
+def _strip_disclosure_legal_notice(plain: str) -> str:
+    """
+    移除表頭強制揭露說明（不應進辨識輸出）。
+
+    舊版：依財團法人…捐款者姓名。
+    新版：依《財團法人法》第25條…公開揭露捐款者姓名。（句尾可能為 。．. 或 OCR 缺字）
+    """
+    t = plain
+    # 由「依《財團法人法》」或「依財團法人」起，非貪婪到「捐款者姓名」再吃掉常見句尾標點
+    for pat in (
+        r"依《財團法人法》[\s\S]*?捐款者\s*姓名\s*[。．.」』]?\s*",
+        r"依財團法人[\s\S]*?捐款者\s*姓名\s*[。．.」』]?\s*",
+        # 若「依」字被 OCR 吃掉，仍從書名號起刪
+        r"《財團法人法》\s*第\s*25\s*條[\s\S]*?捐款者\s*姓名\s*[。．.」』]?\s*",
+        # 簡體／異體：请、将；結尾錨定「公開揭露捐款者姓名」較寬鬆
+        r"依《財團法人法》[\s\S]*?公開揭露捐款者姓名\s*[。．.」』]?\s*",
+        r"《財團法人法》\s*第\s*25\s*條[\s\S]*?公開揭露捐款者姓名\s*[。．.」』]?\s*",
+    ):
+        t = re.sub(pat, "", t, flags=re.DOTALL)
+    return t
+
+
+def strip_foundation_law_disclosure_from_text(text: str) -> str:
+    """
+    從版面 OCR 合併全文移除第25條強制揭露說明（與是否套用奉獻袋摘要無關）。
+    """
+    if not text:
+        return text
+    t = unicodedata.normalize("NFKC", text)
+    return _strip_disclosure_legal_notice(t)
+
+
+def is_foundation_law_disclosure_block(content: Optional[str]) -> bool:
+    """單一版面區塊是否應從合併 Markdown 中略過（整段皆為揭露說明）。"""
+    if not content or not str(content).strip():
+        return False
+    s = _WS.sub(" ", str(content).strip())
+    if len(s) < 24:
+        return False
+    return bool(_line_is_disclosure_legal_notice(s))
+
+
+def _line_is_disclosure_legal_notice(s: str) -> bool:
+    """整行皆為（或核心為）第25條揭露說明時丟棄，避免正則因換行／缺字漏網。"""
+    if len(s) < 24:
+        return False
+    if "捐款不公開聲明" in s and ("財團法人法" in s or "財團法人" in s):
+        return True
+    if "主動公開捐款者資訊" in s and "第25條" in s:
+        return True
+    if "依法規定公開揭露捐款者姓名" in s or "依法規定公開揭露捐款者" in s:
+        return True
+    return False
+
+
 def _sanitize_offering_markdown_body(plain: str) -> str:
     """
     依奉獻袋規則從 OCR 全文產出「給使用者的 Markdown」：刪免列印句、依勾選過濾長句等。
     （先於摘要解析呼叫，使 full_markdown 與解析來源一致。）
     """
-    t = re.sub(r"依財團法人[\s\S]*?捐款者姓名。", "", plain)
+    t = _strip_disclosure_legal_notice(plain)
     lines = t.split("\n")
     out: List[str] = []
     for line in lines:
         s = line.strip()
         if not s:
+            continue
+        if _line_is_disclosure_legal_notice(s):
             continue
         if "線上奉獻" in s and len(s) <= 24:
             continue
@@ -905,15 +969,22 @@ def _sanitize_offering_markdown_body(plain: str) -> str:
         drop_labels = ("奉獻收據寄送地址", "收據寄送地址", "郵寄地址")
         out = [ln for ln in out if not any(lab in ln for lab in drop_labels)]
         joined = "\n".join(out)
+    title_pv = _extract_labeled_tail(_RECEIPT_TITLE_PAT, joined)
+    if title_pv is not None and not _receipt_title_value_meaningful(title_pv):
+        drop_title = ("奉獻收據抬頭", "收據抬頭")
+        out = [ln for ln in out if not any(lab in ln for lab in drop_title)]
+        joined = "\n".join(out)
     return joined
 
 
 def _mailing_address_should_appear(plain: str, addr_value: Optional[str]) -> bool:
     """
     奉獻收據寄送地址與「聯絡電話」之間須有有效內容：有數字（如郵遞區號）或有地址文字；
-    否則不輸出該欄。
+    僅「000000」等全零占位視為無地址。否則不輸出該欄。
     """
     if not addr_value or not addr_value.strip():
+        return False
+    if not _mailing_address_value_meaningful(addr_value):
         return False
     i = plain.find("奉獻收據寄送地址")
     if i < 0:
@@ -935,9 +1006,7 @@ def _mailing_address_should_appear(plain: str, addr_value: Optional[str]) -> boo
         content = seg[colon + 1 :].strip()
     else:
         content = seg.strip()
-    digits = len(re.findall(r"\d", content))
-    has_cjk = bool(re.search(r"[\u4e00-\u9fff]", content))
-    if digits == 0 and not has_cjk:
+    if not _mailing_address_value_meaningful(content):
         return False
     return True
 
@@ -1079,6 +1148,43 @@ def _extract_labeled_tail(pat: re.Pattern, plain: str) -> Optional[str]:
     return v
 
 
+def _receipt_title_value_meaningful(v: str) -> bool:
+    """抬頭欄僅有冒號／空白等視為未填，不應輸出。"""
+    if not v or not str(v).strip():
+        return False
+    t = unicodedata.normalize("NFKC", v.strip())
+    t = re.sub(r"^[：:．.\s]+", "", t)
+    t = re.sub(r"[：:．.\s]+$", "", t)
+    if not t:
+        return False
+    if re.fullmatch(r"[：:．.\s]+", v.strip()):
+        return False
+    if re.search(r"[\u4e00-\u9fff]", t):
+        return True
+    if re.search(r"[A-Za-z]{2,}", t):
+        return True
+    if re.search(r"[1-9]", t):
+        return True
+    if re.search(r"0", t) and re.search(r"[1-9A-Za-z\u4e00-\u9fff]", t):
+        return True
+    return False
+
+
+def _mailing_address_value_meaningful(v: str) -> bool:
+    """僅郵遞區號占位（如 000000）或全零數字視為無地址。"""
+    if not v or not str(v).strip():
+        return False
+    t = unicodedata.normalize("NFKC", v.strip())
+    t = re.sub(r"^[：:．.\s]+", "", t)
+    t = re.sub(r"[：:．.\s]+$", "", t)
+    if not t:
+        return False
+    compact = re.sub(r"\s", "", t)
+    if compact.isdigit() and set(compact) <= {"0"}:
+        return False
+    return True
+
+
 def _build_v2_twelve_field_summary(
     plain: str, lines: List[str]
 ) -> Tuple[List[Dict[str, str]], str]:
@@ -1174,7 +1280,7 @@ def _build_v2_twelve_field_summary(
             formatted.append(f"奉獻日期：{dv}")
 
     rt = _extract_labeled_tail(_RECEIPT_TITLE_PAT, plain)
-    if rt:
+    if rt and _receipt_title_value_meaningful(rt):
         rows.append({"key": "receipt_title", "label": "奉獻收據抬頭", "value": rt})
         formatted.append(f"奉獻收據抬頭  {rt}")
 
@@ -1320,8 +1426,8 @@ def _build_summary_and_formatted(plain: str, lines: List[str]) -> Tuple[List[Dic
         rows.append({"key": "receipt", "label": "奉獻收據", "value": rv})
 
     if nv:
-        formatted_lines.append(f"奉獻人姓名：{nv}")
-        rows.append({"key": "donor", "label": "奉獻人姓名", "value": nv})
+        formatted_lines.append(f"辨識者姓名：{nv}")
+        rows.append({"key": "donor", "label": "辨識者姓名", "value": nv})
 
     if id_num:
         formatted_lines.append(f"身份證字號：{id_num}")
@@ -1348,6 +1454,28 @@ def _build_summary_and_formatted(plain: str, lines: List[str]) -> Tuple[List[Dic
 
     formatted_text = "\n".join(formatted_lines)
     return rows, formatted_text
+
+
+def should_apply_lovenet_offering_rules(
+    full_markdown: str, *, form_template: Optional[str] = None
+) -> bool:
+    """
+    是否套用愛盟奉獻袋 Markdown／摘要規則（與 OCR 引擎、是否勾選表單無關的統一後處理入口）。
+
+    - 已傳 form_template=offering_envelope：一律套用。
+    - 否則：內容符合新版奉獻袋關鍵字且具「合計」或「奉獻」等脈絡時套用（避免未勾表單但實為奉獻袋時漏規則）。
+    """
+    ft = (form_template or "").strip()
+    if ft == "offering_envelope":
+        return True
+    plain = unicodedata.normalize("NFKC", _plain_text(full_markdown or ""))
+    if len(plain.strip()) < 30:
+        return False
+    if not _should_prefer_v2(plain):
+        return False
+    if "合計" in plain or "奉獻" in plain:
+        return True
+    return False
 
 
 def build_offering_display(full_markdown: str) -> Dict[str, Any]:

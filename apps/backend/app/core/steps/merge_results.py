@@ -10,7 +10,12 @@ import os
 from app.core.flows.base import ProcessingContext
 from app.utils.json_safe import json_sanitize
 from app.utils.logger import logger
-from app.utils.offering_display import build_offering_display
+from app.utils.offering_display import (
+    build_offering_display,
+    should_apply_lovenet_offering_rules,
+    strip_foundation_law_disclosure_from_text,
+    is_foundation_law_disclosure_block,
+)
 
 
 class MergeResultsStepInput:
@@ -105,16 +110,25 @@ async def _merge_to_markdown(
         # page_num = page.get("page_number", i + 1)
         layout = page.get("layout", {}).get("blocks", [])
         for i, block in enumerate(layout):
-            text = block.get("content", "")
+            raw = block.get("content") or ""
             layout_type = block.get("layout_type", "")
             if layout_type == "image":
                 img_name = block.get("image_path")
-                # 将相对路径转换为绝对路径
-                if img_name and not os.path.isabs(img_name):
-                    img_name = os.path.abspath(img_name)
-
-                text = f'<div style="text-align: center;"><img src="http://localhost:8000/api/v1/tasks/file?path={img_name}" alt="Image"/></div>\n'
-            markdown_lines.append(f"{text}\n")
+                if raw.strip():
+                    text = raw.strip() + "\n"
+                elif img_name:
+                    if not os.path.isabs(img_name):
+                        img_name = os.path.abspath(img_name)
+                    text = (
+                        f'<div style="text-align: center;"><img src="http://localhost:8000/api/v1/tasks/file?path={img_name}" alt="Image"/></div>\n'
+                    )
+                else:
+                    text = ""
+            elif is_foundation_law_disclosure_block(raw):
+                text = ""
+            else:
+                text = f"{raw}\n" if raw else "\n"
+            markdown_lines.append(text)
             merge_res_layout.append(
                 {
                     "block_content": text,
@@ -127,13 +141,18 @@ async def _merge_to_markdown(
     if progress_callback:
         progress = 100.0
         await progress_callback(progress, f"Merging page {i + 1}/{total_pages}")
-    result["full_markdown"] = "".join(markdown_lines)
+    result["full_markdown"] = strip_foundation_law_disclosure_from_text(
+        "".join(markdown_lines)
+    )
     result["layout"] = merge_res_layout
 
     ft = (context.metadata or {}).get("form_template") or (
         context.ocr_config or {}
     ).get("form_template")
-    if ft == "offering_envelope":
+    apply_lovenet = should_apply_lovenet_offering_rules(
+        result["full_markdown"], form_template=ft
+    )
+    if apply_lovenet:
         od = build_offering_display(result["full_markdown"])
         result["offering_display"] = od
         sm = od.get("sanitized_markdown")
@@ -143,12 +162,14 @@ async def _merge_to_markdown(
     # 写入文件
     md_output_path = str(Path(output_dir) / "result.md")
     with open(md_output_path, "w", encoding="utf-8") as f:
-        if ft == "offering_envelope" and isinstance(
-            result.get("full_markdown"), str
-        ) and result["full_markdown"].strip():
-            f.write("# OCR 結果\n\n" + result["full_markdown"])
+        body = result.get("full_markdown") or ""
+        if apply_lovenet:
+            if body.strip():
+                f.write("# OCR 結果\n\n" + body.strip() + "\n")
+            else:
+                f.write("# OCR 結果\n\n")
         else:
-            f.writelines(markdown_lines)
+            f.write(body)
     json_output_path = str(Path(output_dir) / "merged.json")
     with open(json_output_path, "w", encoding="utf-8") as f:
         json.dump(json_sanitize(result), f, ensure_ascii=False, indent=2)
