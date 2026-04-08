@@ -79,25 +79,55 @@ struct PositionStatusRow: View {
     let positionStatus: PositionStatus
 
     var body: some View {
-        HStack {
-            Text("位置：")
-                .foregroundColor(.white.opacity(0.7))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("位置：")
+                    .foregroundColor(.white.opacity(0.7))
 
-            if !isDetected {
-                Text("未偵測到信封")
-                    .foregroundColor(.black)
-            } else {
-                Text(positionStatus.message)
-                    .foregroundColor(positionStatus.isAligned ? .green : .yellow)
+                if !isDetected {
+                    Text("未偵測到信封")
+                        .foregroundColor(.black)
+                } else {
+                    Text(positionStatus.message)
+                        .foregroundColor(positionStatus.isAligned ? .green : .yellow)
+                }
+                Spacer()
+
+                // 方向箭頭提示
+                if isDetected && !positionStatus.isAligned {
+                    positionArrows
+                }
             }
-            Spacer()
+            .font(.subheadline)
 
-            // 方向箭頭提示
-            if isDetected && !positionStatus.isAligned {
-                positionArrows
+            if isDetected {
+                Text(horizontalOffsetCaption)
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(.subheadline)
+    }
+
+    /// 「原來位置」＝引導框中心；數值為（偵測中心 − 引導中心）之水平分量，×100≈佔畫面寬度百分比。
+    private var horizontalOffsetCaption: String {
+        let h = positionStatus.horizontalOffsetNormalized
+        let pct = Double(h * 100)
+        if abs(h) < 0.0005 {
+            return "相對引導框中心：水平差 ≈0% 寬"
+        }
+        if h > 0 {
+            return String(
+                format: "相對引導框中心：偏右 %.1f%% 寬（對齊約再向左移約 %.1f%% 寬）",
+                pct,
+                pct
+            )
+        }
+        return String(
+            format: "相對引導框中心：偏左 %.1f%% 寬（對齊約再向右移約 %.1f%% 寬）",
+            -pct,
+            -pct
+        )
     }
 
     @ViewBuilder

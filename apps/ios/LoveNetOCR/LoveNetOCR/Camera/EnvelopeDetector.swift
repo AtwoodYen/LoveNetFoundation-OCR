@@ -14,6 +14,14 @@ struct PositionStatus {
     let needsMoveUp: Bool
     let needsMoveDown: Bool
 
+    /// 偵測信封中心與引導框中心的水平差（Vision 正規化座標，約 -0.5…0.5）。
+    /// **正值**＝信封在引導框**右**側；與引導對齊時，約須將信封**向左移**「此值 × 畫面寬度」。
+    /// **負值**＝信封在引導框左側，約須向右移 |值| × 畫面寬度。
+    let horizontalOffsetNormalized: CGFloat
+
+    /// 垂直差（Vision 正規化）；正值表示信封中心較引導框中心「較高」（畫面上方）。
+    let verticalOffsetNormalized: CGFloat
+
     var message: String {
         if isAligned {
             return "位置正確 ✓"
@@ -31,7 +39,9 @@ struct PositionStatus {
         needsMoveLeft: false,
         needsMoveRight: false,
         needsMoveUp: false,
-        needsMoveDown: false
+        needsMoveDown: false,
+        horizontalOffsetNormalized: 0,
+        verticalOffsetNormalized: 0
     )
 }
 
@@ -369,7 +379,9 @@ final class EnvelopeDetector {
             needsMoveLeft: needsMoveLeft,
             needsMoveRight: needsMoveRight,
             needsMoveUp: needsMoveUp,
-            needsMoveDown: needsMoveDown
+            needsMoveDown: needsMoveDown,
+            horizontalOffsetNormalized: offsetX,
+            verticalOffsetNormalized: offsetY
         )
     }
 

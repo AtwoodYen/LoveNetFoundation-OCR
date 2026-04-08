@@ -109,14 +109,17 @@ struct EnvelopeCameraView: View {
                 // 相機預覽層
                 CameraPreviewView(
                     session: cameraManager.captureSession,
+                    visionBoundingBox: cameraManager.detectionResult.isDetected
+                        ? cameraManager.detectionResult.boundingBox
+                        : nil,
                     onTapToFocus: { point in
                         cameraManager.focus(at: point)
                     }
                 )
                 .ignoresSafeArea()
 
-                // 引導框覆蓋層
-                GuideOverlayView(state: guideState)
+                // 引導框覆蓋層（始終紅色，與信封偵測分開）
+                GuideOverlayView(state: .searching)
 
                 // 十字輔助線（傾斜時顯示）
                 let guideRect = calculateGuideRect(in: geometry.size)
@@ -610,37 +613,16 @@ struct DebugCenterOverlay: View {
                 let guideRectPath = Path(guideRect)
                 context.stroke(guideRectPath, with: .color(.blue), lineWidth: 2)
 
-                // 偵測到的信封（綠色）- 十字線 + 邊框
-                if detectionResult.isDetected, let boundingBox = detectionResult.boundingBox {
-                    // Vision 座標轉 UIKit 座標
-                    let detectedCenterX = boundingBox.midX * size.width
-                    let detectedCenterY = (1 - boundingBox.midY) * size.height
-
-                    drawCrosshair(
-                        context: context,
-                        center: CGPoint(x: detectedCenterX, y: detectedCenterY),
-                        color: .green,
-                        size: size
-                    )
-
-                    // boundingBox 邊框（綠色）- Vision 座標轉 UIKit
-                    let boxX = boundingBox.minX * size.width
-                    let boxY = (1 - boundingBox.maxY) * size.height
-                    let boxWidth = boundingBox.width * size.width
-                    let boxHeight = boundingBox.height * size.height
-                    let uiKitBoundingBox = CGRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
-
-                    let boundingBoxPath = Path(uiKitBoundingBox)
-                    context.stroke(boundingBoxPath, with: .color(.green), lineWidth: 2)
-                }
+                // 偵測信封綠框：改在 CameraPreviewUIView 以 layerRectConverted 繪製，
+                // 與 AVCaptureVideoPreviewLayer（resizeAspectFill）裁切一致，避免僅線性縮放時左右偏移錯誤。
             }
 
-            // 中央顯示座標數值
+            // 中央顯示座標數值（皆為「頁面／視圖左上角為 (0,0)、Y 向下」之 0~1 正規化，與信封引導幾何無關）
             VStack(spacing: 4) {
-                // 引導框中心（藍色，正規化座標）
+                // 引導框中心（藍）：SwiftUI 視圖座標，左上原點
                 let guideNormX = guideRect.midX / viewSize.width
-                let guideNormY = 1 - (guideRect.midY / viewSize.height)  // 轉為 Vision 座標
-                Text("引導: (\(String(format: "%.3f", guideNormX)), \(String(format: "%.3f", guideNormY)))")
+                let guideNormY = guideRect.midY / viewSize.height
+                Text("引導中心: (\(String(format: "%.3f", guideNormX)), \(String(format: "%.3f", guideNormY)))")
                     .font(.caption)
                     .foregroundColor(.blue)
                     .padding(.horizontal, 8)
@@ -648,15 +630,21 @@ struct DebugCenterOverlay: View {
                     .background(Color.black.opacity(0.7))
                     .cornerRadius(4)
 
-                // 偵測到的信封中心（綠色）
-                if detectionResult.isDetected, let boundingBox = detectionResult.boundingBox {
-                    Text("偵測: (\(String(format: "%.3f", boundingBox.midX)), \(String(format: "%.3f", boundingBox.midY)))")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.7))
-                        .cornerRadius(4)
+                // Apple Vision 矩形偵測：boundingBox 為 Vision 左下原點；此處顯示換算後「頁面左上原點」之中心與框
+                if detectionResult.isDetected, let bbox = detectionResult.boundingBox {
+                    let cx = bbox.midX
+                    let cyTopLeft = 1 - bbox.midY
+                    let ox = bbox.minX
+                    let oyTopLeft = 1 - bbox.maxY
+                    Text(
+                        "偵測 (Vision 原框→頁面左上): 中心 (\(String(format: "%.3f", cx)), \(String(format: "%.3f", cyTopLeft)))  原點 (\(String(format: "%.3f", ox)), \(String(format: "%.3f", oyTopLeft))) \(String(format: "%.3f", bbox.width))×\(String(format: "%.3f", bbox.height))"
+                    )
+                    .font(.caption2)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(4)
                 } else {
                     Text("偵測: --")
                         .font(.caption)

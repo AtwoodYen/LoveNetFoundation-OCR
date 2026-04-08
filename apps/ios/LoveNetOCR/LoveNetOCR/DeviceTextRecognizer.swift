@@ -44,11 +44,13 @@ enum DeviceTextRecognizer {
 
                 logger.info("📝 Vision 辨識到 \(observations.count) 個文字區塊")
 
-                // 記錄每個區塊的原始位置和內容
+                // 記錄每個區塊：Vision 左下原點之 boundingBox，並註記換算為「頁面左上 (0,0)、Y 向下」之中心
                 for (i, obs) in observations.enumerated() {
                     let box = obs.boundingBox
                     let text = bestCandidateString(from: obs)
-                    logger.debug("  [\(i)] y=\(String(format: "%.3f", box.midY)) x=\(String(format: "%.3f", box.midX)) → \"\(text)\"")
+                    let cx = box.midX
+                    let cyTopLeft = 1 - box.midY
+                    logger.debug("  [\(i)] 頁面左上原點 中心=(\(String(format: "%.3f", cx)), \(String(format: "%.3f", cyTopLeft))) Vision原框=(\(String(format: "%.3f", box.minX)),\(String(format: "%.3f", box.minY))) \(String(format: "%.3f", box.width))×\(String(format: "%.3f", box.height)) → \"\(text)\"")
                 }
 
                 let sorted = observations.sorted { a, b in
