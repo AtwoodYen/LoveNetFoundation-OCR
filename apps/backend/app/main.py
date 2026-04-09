@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 from contextlib import asynccontextmanager
+import subprocess
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,11 +20,37 @@ from app.utils.logger import logger
 from app.utils.config import settings
 
 
+def _get_en0_ip() -> str | None:
+    """
+    取得 macOS Wi‑Fi 介面 en0 的 IPv4（供真機測試填寫 baseURL）。
+    失敗時回傳 None（不可影響服務啟動）。
+    """
+    try:
+        if sys.platform != "darwin":
+            return None
+        p = subprocess.run(
+            ["ipconfig", "getifaddr", "en0"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=1.0,
+        )
+        ip = (p.stdout or "").strip()
+        return ip or None
+    except Exception:
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     logger.info("Application starting up...")
+    en0_ip = _get_en0_ip()
+    if en0_ip:
+        logger.info(f"en0 IPv4: {en0_ip}（iOS 真機 baseURL 可填 http://{en0_ip}:8000）")
+    else:
+        logger.info("en0 IPv4: --（非 macOS 或無法取得；真機請用 `ipconfig getifaddr en0` 查詢）")
 
     # 1. 初始化数据库
     await init_db()

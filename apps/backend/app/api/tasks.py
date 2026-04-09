@@ -371,6 +371,14 @@ async def get_task_status(task_id: str):
             if isinstance(od, dict) and od.get("hide_raw_text"):
                 response_data["full_markdown"] = None
 
+            # 捐獻袋規則處理結果
+            donation_output = result_data.get("donation_output")
+            if donation_output:
+                response_data["donation_output"] = donation_output
+            donation_rules = result_data.get("donation_rules")
+            if donation_rules:
+                response_data["donation_rules"] = donation_rules
+
         return ApiResponse(
             success=True,
             data=response_data,

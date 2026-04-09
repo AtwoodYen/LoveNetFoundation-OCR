@@ -40,6 +40,7 @@ from app.utils.offering_display import (
     build_offering_display,
     should_apply_lovenet_offering_rules,
 )
+from app.utils.donation_rules import process_donation_ocr
 
 
 class GoogleVisionFlow(TaskProcessingFlow):
@@ -550,14 +551,6 @@ class GoogleVisionFlow(TaskProcessingFlow):
                 md_output_path.write_text(f"# OCR 結果\n\n{sm}", encoding="utf-8")
             logger.info(f"奉獻袋摘要: {offering_display}")
 
-        # 輸出 JSON
-        json_output_path = output_dir / "result.json"
-        json_output_path.write_text(
-            json.dumps(result_data, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
-        output_files.append(str(json_output_path))
-
         # 輸出 Vision.json（區塊座標與文字）
         vision_data = {
             "task_id": self.context.task_id,
@@ -638,6 +631,42 @@ class GoogleVisionFlow(TaskProcessingFlow):
         output_files.append(str(vision_output_path))
         logger.info(f"已儲存 Vision.json: {vision_output_path}")
 
+        # 套用捐獻袋 OCR 規則處理
+        donation_rules_result = None
+        if form_template == "offering_envelope" and all_blocks:
+            logger.info(f"[{self.context.task_id}] 開始套用捐獻袋 OCR 規則處理")
+            try:
+                donation_rules_result = process_donation_ocr(all_blocks)
+                result_data["donation_rules"] = donation_rules_result
+
+                # 如果有輸出文字，更新 full_markdown
+                donation_output = donation_rules_result.get("output_text", "")
+                if donation_output:
+                    result_data["donation_output"] = donation_output
+                    logger.info(f"捐獻袋規則輸出:\n{donation_output}")
+
+                # 儲存 temp.json（捐獻項目結構化資料）
+                temp_json_path = output_dir / "temp.json"
+                temp_json_path.write_text(
+                    json.dumps(donation_rules_result.get("donate_no", {}), ensure_ascii=False, indent=2),
+                    encoding="utf-8"
+                )
+                output_files.append(str(temp_json_path))
+                logger.info(f"已儲存 temp.json: {temp_json_path}")
+
+            except Exception as e:
+                logger.error(f"捐獻袋 OCR 規則處理失敗: {e}")
+                result_data["donation_rules_error"] = str(e)
+
+        # 輸出 result.json（在所有處理完成後）
+        json_output_path = output_dir / "result.json"
+        json_output_path.write_text(
+            json.dumps(result_data, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        output_files.append(str(json_output_path))
+        logger.info(f"已儲存 result.json: {json_output_path}")
+
         await self.update_progress(
             step_name=step_name,
             progress=100.0,
@@ -645,7 +674,8 @@ class GoogleVisionFlow(TaskProcessingFlow):
             message="結果輸出完成",
         )
 
-        return {
+        # 準備回傳資料
+        return_data = {
             "md_output_path": str(md_output_path),
             "json_output_path": str(json_output_path),
             "output_files": output_files,
@@ -656,3 +686,10 @@ class GoogleVisionFlow(TaskProcessingFlow):
                 "has_preprocessing": preprocess_result is not None,
             },
         }
+
+        # 如果有捐獻規則輸出，加入回傳資料
+        if donation_rules_result:
+            return_data["donation_output"] = donation_rules_result.get("output_text", "")
+            return_data["donation_rules"] = donation_rules_result
+
+        return return_data
