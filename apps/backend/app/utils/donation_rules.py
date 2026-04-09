@@ -1302,8 +1302,9 @@ class DonationRulesProcessor:
         往前找奉獻者姓名
 
         從 "奉獻" 的前一個 index 開始往前找，
-        直到找到 ":" 或長度為 10 的身分證字號才停止，
-        然後合併 ":" 的下一個 index 到 "奉獻" 前一個 index 的所有內容
+        直到找到 ":" 或有效身分證字號才停止，
+        跳過 "0000000000" 或任何長度為 10 的字串（視為無效），
+        然後合併 ":" 的下一個 index 到 "奉獻" 前一個 index 的所有內容（排除 10 字元字串）
         """
         if fengxian_index <= 0:
             logger.info("奉獻 index 太小，無法往前找")
@@ -1311,7 +1312,8 @@ class DonationRulesProcessor:
 
         # 從 "奉獻" 的前一個 index 開始往前找
         current_index = fengxian_index - 1
-        stop_index = -1  # 停止位置（":" 或身分證字號的 index）
+        stop_index = -1  # 停止位置（":" 的 index）
+        skip_indices = set()  # 要跳過的 index（10 字元字串）
 
         while current_index >= 0:
             block = index_to_block.get(current_index)
@@ -1327,21 +1329,25 @@ class DonationRulesProcessor:
                 logger.debug(f"往前找到 ':' at index={current_index}")
                 break
 
-            # 檢查是否為身分證字號（長度 10，第一個是英文，後 9 個是數字）
-            if self._is_valid_id_card(text):
-                stop_index = current_index
-                logger.debug(f"往前找到身分證字號 '{text}' at index={current_index}")
-                break
+            # 檢查是否為長度 10 的字串（包括 "0000000000" 和身分證字號格式）
+            # 這些都視為無效，跳過不加入姓名
+            if len(text) == 10:
+                skip_indices.add(current_index)
+                logger.debug(f"往前跳過長度10的字串 '{text}' at index={current_index}")
+                current_index -= 1
+                continue
 
             current_index -= 1
 
         if stop_index < 0:
-            logger.info("往前找沒有找到 ':' 或身分證字號")
+            logger.info("往前找沒有找到 ':'")
             return
 
-        # 合併從 stop_index + 1 到 fengxian_index - 1 的所有內容
+        # 合併從 stop_index + 1 到 fengxian_index - 1 的所有內容（排除 skip_indices）
         name_parts = []
         for idx in range(stop_index + 1, fengxian_index):
+            if idx in skip_indices:
+                continue
             block = index_to_block.get(idx)
             if block:
                 text = block.get("text", "").strip()
