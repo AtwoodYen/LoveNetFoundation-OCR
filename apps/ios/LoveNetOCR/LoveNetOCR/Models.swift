@@ -104,4 +104,6 @@ struct TaskDetailPayload: Decodable {
     let priority: Int?
     let full_markdown: String?
     let offering_display: OfferingDisplayPayload?
+    /// 捐獻袋 OCR 13 階段規則處理輸出
+    let donation_output: String?
 }

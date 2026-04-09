@@ -128,6 +128,18 @@ struct TaskDetailView: View {
             // 日誌：顯示服務器返回的結果
             if let d = detail {
                 logger.info("📥 任務狀態: \(d.status), 進度: \(d.progress ?? 0)%")
+
+                // 捐獻袋 13 階段規則輸出
+                if let donationOutput = d.donation_output, !donationOutput.isEmpty {
+                    logger.info("════════════════════════════════════════")
+                    logger.info("📋 捐獻袋 OCR 辨識結果（13階段規則）:")
+                    logger.info("════════════════════════════════════════")
+                    for line in donationOutput.split(separator: "\n") {
+                        logger.info(">>> \(line)")
+                    }
+                    logger.info("════════════════════════════════════════")
+                }
+
                 if let od = d.offering_display {
                     logger.info("📋 offering_display.formatted_text:\n\(od.formatted_text ?? "(空)")")
                     logger.info("📋 offering_display.summary 共 \(od.summary.count) 項:")

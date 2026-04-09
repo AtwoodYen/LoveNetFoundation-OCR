@@ -2057,164 +2057,154 @@ class DonationRulesProcessor:
         output_lines = []
 
         # 輸出捐獻項目和金額
-        logger.info("[輸出檢查] 捐獻項目和金額:")
+        logger.info("[1] 捐獻項目和金額:")
         if hasattr(self, "matched_item_name") and self.matched_item_name and self.donate_money:
             line = f"{self.matched_item_name}：{self.donate_money.amount}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
-            logger.warning(f"  [未輸出] matched_item_name={getattr(self, 'matched_item_name', 'N/A')}, donate_money={self.donate_money}")
             if not self.donate_money:
-                logger.warning("    原因：未找到捐獻金額")
+                logger.info("  X: 捐獻金額 - 未找到捐獻金額")
             if not getattr(self, "matched_item_name", ""):
-                logger.warning("    原因：未配對到任何捐獻項目")
+                logger.info("  X: 捐獻項目 - 未配對到任何捐獻項目")
 
         # 輸出合計
-        logger.info("[輸出檢查] 合計金額:")
+        logger.info("[2] 合計金額:")
         if self.total_amount:
             line = f"合計：{self.total_amount}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
-            logger.warning("  [未輸出] total_amount 為空")
-            logger.warning("    原因：未找到合計金額")
+            logger.info("  X: 合計 - 未找到合計金額")
 
         # 第六階段：輸出有勾選的收據選項（三者互斥，只輸出一個）
-        logger.info("[輸出檢查] 收據選項（互斥，只輸出一個）:")
-        logger.info(f"  IRS (代上傳國稅局): found={bool(self.receipt_irs)}, checked={self.receipt_irs_checked}")
-        logger.info(f"  電子收據: found={bool(self.receipt_electronic)}, checked={self.receipt_electronic_checked}")
-        logger.info(f"  紙本收據: found={bool(self.receipt_paper)}, checked={self.receipt_paper_checked}")
-
+        logger.info("[3] 收據選項:")
         receipt_output = None  # 只輸出一個收據選項
 
         # 優先順序：紙本收據 > 電子收據 > IRS（按常見使用頻率）
         if self.receipt_paper_checked and self.receipt_paper:
             receipt_output = self.receipt_paper.get("text", "年度紙本收據")
-            logger.info(f"  [選中] 紙本收據")
         elif self.receipt_electronic_checked and self.receipt_electronic:
             receipt_output = self.receipt_electronic.get("text", "電子收據")
-            logger.info(f"  [選中] 電子收據")
         elif self.receipt_irs_checked and self.receipt_irs:
             receipt_output = self.receipt_irs.get("text", "代上傳國稅局無紙本")
-            logger.info(f"  [選中] IRS")
 
         if receipt_output:
             output_lines.append(receipt_output)
-            logger.info(f"  [輸出] {receipt_output}")
+            logger.info(f"  O: {receipt_output}")
         else:
             # 如果三種收據選項都沒有勾選，輸出「不需要奉獻收據」
             if self.no_receipt_str:
                 output_lines.append(self.no_receipt_str)
-                logger.info(f"  [輸出] {self.no_receipt_str}（三種收據選項都沒有勾選）")
+                logger.info(f"  O: {self.no_receipt_str} - 三種收據選項都沒有勾選")
             else:
-                logger.info("  [未輸出] 原因：沒有任何收據選項被勾選，也沒有找到「不需要奉獻收據」")
+                logger.info("  X: 收據選項 - 沒有任何收據選項被勾選，也沒有找到「不需要奉獻收據」")
 
         # 輸出不同意揭露聲明（如果有勾選）
-        logger.info("[輸出檢查] 不同意揭露聲明:")
-        logger.info(f"  聲明文字: '{self.agree_public_str[:20]}...' if len > 20 else '{self.agree_public_str}'")
-        logger.info(f"  是否勾選: {self.agree_public_checked}")
+        logger.info("[4] 不同意揭露聲明:")
         if self.agree_public_checked and self.agree_public_str:
             output_lines.append(self.agree_public_str)
-            logger.info(f"  [輸出] {self.agree_public_str}")
+            logger.info(f"  O: {self.agree_public_str[:30]}...")
         elif not self.agree_public_str:
-            logger.info("    [未輸出] 原因：未找到聲明文字")
+            logger.info("  X: 不同意揭露聲明 - 未找到聲明文字")
         elif not self.agree_public_checked:
-            logger.info("    [未輸出] 原因：聲明未勾選")
+            logger.info("  X: 不同意揭露聲明 - 聲明未勾選")
 
         # 第七階段：輸出身分證字號
-        logger.info("[輸出檢查] 身分證字號:")
-        logger.info(f"  標籤: '{self.id_card_label}', 號碼: '{self.id_card_number}'")
+        logger.info("[5] 身分證字號:")
         if self.id_card_label and self.id_card_number:
             line = f"{self.id_card_label}{self.id_card_number}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.id_card_label:
-                logger.info("    [未輸出] 原因：未找到身分證字號標籤")
-            if not self.id_card_number:
-                logger.info("    [未輸出] 原因：未找到有效的身分證字號")
+                logger.info("  X: 身分證字號 - 未找到標籤")
+            elif not self.id_card_number:
+                logger.info("  X: 身分證字號 - 未找到有效的身分證字號")
 
         # 第八階段：輸出奉獻者姓名
-        logger.info("[輸出檢查] 奉獻者姓名:")
-        logger.info(f"  標籤: '{self.donor_name_label}', 姓名: '{self.donor_name}', found: {self.found_name}")
+        logger.info("[6] 奉獻者姓名:")
         if self.donor_name_label and self.donor_name:
             line = f"{self.donor_name_label}{self.donor_name}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.donor_name_label:
-                logger.info("    [未輸出] 原因：未找到奉獻者姓名標籤")
-            if not self.donor_name:
-                logger.info("    [未輸出] 原因：未找到奉獻者姓名內容（往前往後都沒找到）")
+                logger.info("  X: 奉獻者姓名 - 未找到標籤")
+            elif not self.donor_name:
+                logger.info("  X: 奉獻者姓名 - 未找到姓名內容")
 
         # 第九階段：輸出奉獻日期
-        logger.info("[輸出檢查] 奉獻日期:")
-        logger.info(f"  標籤: '{self.donation_date_label}', 日期: '{self.donation_date}'")
+        logger.info("[7] 奉獻日期:")
         if self.donation_date_label and self.donation_date:
             line = f"{self.donation_date_label}{self.donation_date}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.donation_date_label:
-                logger.info("    [未輸出] 原因：未找到奉獻日期標籤")
-            if not self.donation_date:
-                logger.info("    [未輸出] 原因：未找到奉獻日期內容")
+                logger.info("  X: 奉獻日期 - 未找到標籤")
+            elif not self.donation_date:
+                logger.info("  X: 奉獻日期 - 未找到日期內容")
 
         # 第十階段：輸出奉獻收據抬頭
-        logger.info("[輸出檢查] 奉獻收據抬頭:")
-        logger.info(f"  標籤: '{self.receipt_title_label}', 抬頭: '{self.receipt_title}', found: {self.found_title}")
+        logger.info("[8] 奉獻收據抬頭:")
         if self.receipt_title_label and self.receipt_title:
             line = f"{self.receipt_title_label}{self.receipt_title}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.receipt_title_label:
-                logger.info("    [未輸出] 原因：未找到奉獻收據抬頭標籤")
-            if not self.receipt_title:
-                logger.info("    [未輸出] 原因：未找到奉獻收據抬頭內容（往前往後都沒找到）")
+                logger.info("  X: 奉獻收據抬頭 - 未找到標籤")
+            elif not self.receipt_title:
+                logger.info("  X: 奉獻收據抬頭 - 未找到抬頭內容")
 
         # 第十一階段：輸出奉獻收據寄送地址
-        logger.info("[輸出檢查] 奉獻收據寄送地址:")
-        logger.info(f"  標籤: '{self.mailing_address_label}', 地址: '{self.mailing_address}'")
+        logger.info("[9] 奉獻收據寄送地址:")
         if self.mailing_address_label and self.mailing_address:
             line = f"{self.mailing_address_label}{self.mailing_address}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.mailing_address_label:
-                logger.info("    [未輸出] 原因：未找到奉獻收據寄送地址標籤")
-            if not self.mailing_address:
-                logger.info("    [未輸出] 原因：未找到奉獻收據寄送地址內容")
+                logger.info("  X: 奉獻收據寄送地址 - 未找到標籤")
+            elif not self.mailing_address:
+                logger.info("  X: 奉獻收據寄送地址 - 未找到地址內容")
 
         # 第十二階段：輸出聯絡電話（長度 > 8 才輸出）
-        logger.info("[輸出檢查] 聯絡電話:")
-        logger.info(f"  標籤: '{self.telephone_label}', 電話: '{self.telephone_number}', 長度: {len(self.telephone_number)}")
+        logger.info("[10] 聯絡電話:")
         if self.telephone_label and self.telephone_number and len(self.telephone_number) > 8:
             line = f"{self.telephone_label}{self.telephone_number}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.telephone_label:
-                logger.info("    [未輸出] 原因：未找到聯絡電話標籤")
-            if not self.telephone_number:
-                logger.info("    [未輸出] 原因：未找到聯絡電話號碼")
+                logger.info("  X: 聯絡電話 - 未找到標籤")
+            elif not self.telephone_number:
+                logger.info("  X: 聯絡電話 - 未找到電話號碼")
             elif len(self.telephone_number) <= 8:
-                logger.info(f"    [未輸出] 原因：電話號碼長度 {len(self.telephone_number)} <= 8")
+                logger.info(f"  X: 聯絡電話 - 電話號碼長度 {len(self.telephone_number)} <= 8")
 
         # 第十三階段：輸出電子信箱
-        logger.info("[輸出檢查] 電子信箱:")
-        logger.info(f"  標籤: '{self.mail_title}', 信箱: '{self.mail}'")
+        logger.info("[11] 電子信箱:")
         if self.mail_title and self.mail:
             line = f"{self.mail_title}{self.mail}"
             output_lines.append(line)
-            logger.info(f"  [輸出] {line}")
+            logger.info(f"  O: {line}")
         else:
             if not self.mail_title:
-                logger.info("    [未輸出] 原因：未找到電子信箱標籤")
-            if not self.mail:
-                logger.info("    [未輸出] 原因：未找到電子信箱地址（沒有 @ 符號的 ASCII 文字）")
+                logger.info("  X: 電子信箱 - 未找到標籤")
+            elif not self.mail:
+                logger.info("  X: 電子信箱 - 未找到電子信箱地址")
 
         output_text = "\n".join(output_lines)
+
+        # 最終輸出摘要
+        logger.info("=" * 60)
+        logger.info("===== 辨識結果輸出 =====")
+        logger.info("=" * 60)
+        for line in output_lines:
+            logger.info(f">>> {line}")
+        logger.info("=" * 60)
 
         # 建立結構化的 Donate No 資料
         donate_no = {

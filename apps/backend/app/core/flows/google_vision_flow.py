@@ -643,7 +643,12 @@ class GoogleVisionFlow(TaskProcessingFlow):
                 donation_output = donation_rules_result.get("output_text", "")
                 if donation_output:
                     result_data["donation_output"] = donation_output
-                    logger.info(f"捐獻袋規則輸出:\n{donation_output}")
+                    logger.info("=" * 60)
+                    logger.info("===== 捐獻袋 OCR 辨識結果（回傳 APP）=====")
+                    logger.info("=" * 60)
+                    for line in donation_output.split("\n"):
+                        logger.info(f">>> {line}")
+                    logger.info("=" * 60)
 
                 # 儲存 temp.json（捐獻項目結構化資料）
                 temp_json_path = output_dir / "temp.json"
