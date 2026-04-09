@@ -1785,7 +1785,7 @@ class DonationRulesProcessor:
         從 ":" 的下一個 index 開始往後找，
         直到找到 "聯絡" 才停止，
         "聯絡" 不加入地址中
-        如果開頭是 "000000" 則忽略
+        如果開頭的 6 字元字串有 5 個以上的 "0"，則忽略
         """
         if colon_index < 0:
             logger.info("沒有找到 ':'，無法尋找地址")
@@ -1793,6 +1793,7 @@ class DonationRulesProcessor:
 
         address_parts = []
         current_index = colon_index + 1
+        is_first_part = True  # 標記是否為地址的第一個部分
 
         # 取得最大 index
         max_index = max(b["index"] for b in all_blocks) if all_blocks else 0
@@ -1812,16 +1813,16 @@ class DonationRulesProcessor:
 
             # 加入地址
             if text:
-                # 檢查是否為 6 位數字（郵遞區號）
-                if len(text) == 6 and text.isdigit():
-                    # 如果是 "000000" 則忽略
-                    if text == "000000":
-                        logger.debug(f"忽略無效郵遞區號 '000000' at index={current_index}")
+                # 檢查第一個部分：如果是 6 字元且有 5 個以上的 "0"，則忽略
+                if is_first_part and len(text) == 6:
+                    zero_count = text.count("0")
+                    if zero_count >= 5:
+                        logger.debug(f"忽略無效開頭 '{text}' at index={current_index}（含 {zero_count} 個 '0'）")
                         current_index += 1
+                        is_first_part = False  # 已處理第一個部分
                         continue
-                    # 其他 6 位數字視為郵遞區號，加入
-                    logger.debug(f"找到郵遞區號 '{text}' at index={current_index}")
 
+                is_first_part = False  # 已處理第一個部分
                 address_parts.append(text)
                 logger.debug(f"找到地址部分 '{text}' at index={current_index}")
 
