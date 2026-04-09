@@ -28,6 +28,7 @@ class DonateItem:
     indices: List[int] = field(default_factory=list)   # 對應的 block indices
     y_values: List[int] = field(default_factory=list)  # 各 block 的 Y 軸值
     avg_y: int = 0                 # Y 軸平均值
+    checked: bool = False          # 是否有勾選標記
 
 
 @dataclass
@@ -325,8 +326,12 @@ class DonationRulesProcessor:
                 keywords=config["keywords"],
             )
 
-            # 找出每個關鍵字對應的 block
-            for keyword in config["keywords"]:
+            # 先找出非共用關鍵字（如 "與"）的 blocks，建立基準 Y 值
+            unique_keywords = [k for k in config["keywords"] if k != "與"]
+            shared_keywords = [k for k in config["keywords"] if k == "與"]
+
+            # 找出唯一關鍵字對應的 blocks
+            for keyword in unique_keywords:
                 for block in self.filtered_blocks:
                     text = block.get("text", "").strip()
                     if text == keyword:
@@ -335,7 +340,28 @@ class DonationRulesProcessor:
                         logger.debug(f"找到關鍵字 '{keyword}' at index={block['index']}, y={block.get('y', 0)}")
                         break  # 每個關鍵字只取第一個匹配
 
-            # 計算 Y 軸平均值
+            # 計算已找到關鍵字的平均 Y 值
+            if item.y_values:
+                base_avg_y = sum(item.y_values) / len(item.y_values)
+            else:
+                base_avg_y = 0
+
+            # 找出共用關鍵字（如 "與"），選擇 Y 值最接近 base_avg_y 的
+            for keyword in shared_keywords:
+                candidates = []
+                for block in self.filtered_blocks:
+                    text = block.get("text", "").strip()
+                    if text == keyword:
+                        candidates.append(block)
+
+                if candidates:
+                    # 選擇 Y 值最接近 base_avg_y 的 block
+                    best_block = min(candidates, key=lambda b: abs(b.get("y", 0) - base_avg_y))
+                    item.indices.append(best_block["index"])
+                    item.y_values.append(best_block.get("y", 0))
+                    logger.debug(f"找到關鍵字 '{keyword}' at index={best_block['index']}, y={best_block.get('y', 0)} (選擇最接近 base_avg_y={base_avg_y:.0f})")
+
+            # 計算最終 Y 軸平均值
             if item.y_values:
                 item.avg_y = int(sum(item.y_values) / len(item.y_values))
                 logger.info(f"捐獻項目 '{item.name}': indices={item.indices}, avg_y={item.avg_y}")
@@ -344,13 +370,77 @@ class DonationRulesProcessor:
 
             self.donate_items.append(item)
 
-        # 2.2 找出捐獻金額 (Donate_Money)
+        # 2.2 檢查哪個捐獻項目有勾選標記
+        self._check_donation_item_checkboxes()
+
+        # 2.3 找出捐獻金額 (Donate_Money)
         # 從過濾後的 blocks 中找第一個不是 "0000" 的數字
         self._find_donate_money()
 
-        # 2.3 配對金額與捐獻項目（根據 Y 軸距離）
-        if self.donate_money:
-            self._match_money_to_item()
+        # 2.4 配對金額與捐獻項目（根據勾選狀態或 Y 軸距離）
+        self._match_money_to_item()
+
+    def _check_donation_item_checkboxes(self):
+        """檢查哪個捐獻項目有勾選標記"""
+        logger.info("[階段2.2] 檢查捐獻項目的勾選狀態...")
+
+        # 獲取所有原始區塊（包括被過濾的）
+        all_blocks = self.original_blocks
+
+        for item in self.donate_items:
+            if not item.indices:
+                continue
+
+            first_index = min(item.indices)
+            first_block = None
+            for block in all_blocks:
+                if block["index"] == first_index:
+                    first_block = block
+                    break
+
+            if not first_block:
+                continue
+
+            item_x = first_block.get("x", 0)
+            item_y = first_block.get("y", 0)
+
+            # 在同一行尋找勾選標記（Y 距離 < 100px，X 在右邊）
+            for block in all_blocks:
+                if block["index"] >= first_index:
+                    continue  # 只檢查前面的區塊
+
+                text = block.get("text", "").strip()
+                block_x = block.get("x", 0)
+                block_y = block.get("y", 0)
+
+                # 檢查是否為勾選標記
+                if not self._is_checkbox_mark(text):
+                    continue
+
+                # 檢查 Y 軸距離（同一行）
+                y_distance = abs(block_y - item_y)
+                if y_distance > 100:
+                    continue
+
+                # 檢查 X 軸位置（勾選標記在右邊，較高的 X 值）
+                x_diff = block_x - item_x
+                if x_diff <= 0 or x_diff > 500:
+                    continue
+
+                # 找到勾選標記
+                item.checked = True
+                logger.info(f"  [勾選] '{item.name}' 有勾選標記 '{text}' at index={block['index']}")
+                break
+
+            if not item.checked:
+                logger.debug(f"  [未勾選] '{item.name}'")
+
+        # 統計勾選情況
+        checked_items = [item.name for item in self.donate_items if item.checked]
+        if checked_items:
+            logger.info(f"  被勾選的項目: {checked_items}")
+        else:
+            logger.info("  沒有找到任何勾選的項目")
 
     def _find_donate_money(self):
         """找出捐獻金額（第一個非 0000 的數字）"""
@@ -363,9 +453,10 @@ class DonationRulesProcessor:
             # 檢查是否為數字（移除可能的逗號）
             clean_text = text.replace(",", "").replace("，", "")
 
-            # 跳過 "0000" 或全為 0 的
-            if re.match(r"^0+$", clean_text):
-                logger.debug(f"  [跳過] '{text}' (index={block['index']}) - 全為0")
+            # 跳過 "0000" 或更長的全 0 字串（可能是佔位符）
+            # 但 "0" 本身是有效金額（表示零元）
+            if len(clean_text) >= 4 and re.match(r"^0+$", clean_text):
+                logger.debug(f"  [跳過] '{text}' (index={block['index']}) - 4位以上全為0（佔位符）")
                 continue
 
             # 檢查是否為有效數字
@@ -384,8 +475,8 @@ class DonationRulesProcessor:
         logger.warning("  可能原因：所有數字區塊都被第一階段過濾掉了")
 
     def _match_money_to_item(self):
-        """根據 Y 軸距離配對金額與捐獻項目"""
-        logger.info("[階段2.3] 根據 Y 軸距離配對金額與捐獻項目...")
+        """根據勾選狀態或 Y 軸距離配對金額與捐獻項目"""
+        logger.info("[階段2.3] 配對金額與捐獻項目...")
 
         if not self.donate_money:
             logger.warning("  [失敗] 沒有找到捐獻金額，無法配對")
@@ -393,6 +484,19 @@ class DonationRulesProcessor:
 
         money_y = self.donate_money.y
         logger.info(f"  金額 '{self.donate_money.amount}' 的 Y 軸: {money_y}")
+
+        # 優先使用勾選的項目
+        checked_items = [item for item in self.donate_items if item.checked]
+        if checked_items:
+            # 如果有勾選的項目，直接使用第一個勾選的項目
+            matched_item = checked_items[0]
+            logger.info(f"  [勾選配對] 找到 {len(checked_items)} 個勾選的項目")
+            logger.info(f"  [配對成功] 金額 {self.donate_money.amount} -> '{matched_item.name}' (勾選優先)")
+            self.matched_item_name = matched_item.name
+            return
+
+        # 沒有勾選的項目，使用 Y 軸距離匹配
+        logger.info("  沒有勾選的項目，使用 Y 軸距離匹配...")
         min_distance = float("inf")
         matched_item = None
 
@@ -408,7 +512,7 @@ class DonationRulesProcessor:
                 matched_item = item
 
         if matched_item:
-            logger.info(f"  [配對成功] 金額 {self.donate_money.amount} -> '{matched_item.name}' (最小距離={min_distance})")
+            logger.info(f"  [配對成功] 金額 {self.donate_money.amount} -> '{matched_item.name}' (Y軸距離={min_distance})")
             self.matched_item_name = matched_item.name
         else:
             self.matched_item_name = ""
@@ -718,7 +822,9 @@ class DonationRulesProcessor:
     # 勾選標記字元（實際填寫的標記，不含空心圓）
     # 空心圓 ○, O, o, 〇 是印刷的選項標記，不是勾選
     # 實心圓、打勾、數字（OCR 可能誤讀 ✓ 為 6 或 8）才是實際勾選
-    CHECKBOX_MARKS = ["6", "8", "①", "◎", "●", "☑", "✓", "√", "V", "v", "Y", "y"]
+    # 勾選標記字元（OCR 可能將勾選識別為這些字元）
+    # "&" 可能是 OCR 將勾選符號誤讀的結果
+    CHECKBOX_MARKS = ["6", "8", "①", "◎", "●", "☑", "✓", "√", "V", "v", "Y", "y", "&"]
 
     def _stage6_receipt_options(self):
         """第六階段：處理收據選項"""
