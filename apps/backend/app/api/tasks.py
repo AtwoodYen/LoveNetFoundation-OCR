@@ -366,18 +366,29 @@ async def get_task_status(task_id: str):
             response_data["metadata"]= result_data.get("metadata")
             response_data["full_markdown"] = result_data.get("full_markdown")
             response_data["layout"] = result_data.get("layout")
-            od = result_data.get("offering_display")
-            response_data["offering_display"] = od
-            if isinstance(od, dict) and od.get("hide_raw_text"):
-                response_data["full_markdown"] = None
-
-            # 捐獻袋規則處理結果
+            # 捐獻袋規則處理結果（13 階段規則）優先
             donation_output = result_data.get("donation_output")
+            donation_rules = result_data.get("donation_rules")
             if donation_output:
                 response_data["donation_output"] = donation_output
-            donation_rules = result_data.get("donation_rules")
+                # 將 donation_output 放入 offering_display.formatted_text，讓 iOS APP 正確顯示
+                response_data["offering_display"] = {
+                    "formatted_text": donation_output,
+                    "summary": [],
+                    "checked_items": [],
+                    "hide_raw_text": True,
+                }
+                response_data["full_markdown"] = None  # 隱藏原始 OCR 文字
             if donation_rules:
                 response_data["donation_rules"] = donation_rules
+
+            # offering_display 作為備用（當沒有 donation_output 時使用）
+            if not donation_output:
+                od = result_data.get("offering_display")
+                if od:
+                    response_data["offering_display"] = od
+                    if isinstance(od, dict) and od.get("hide_raw_text"):
+                        response_data["full_markdown"] = None
 
         return ApiResponse(
             success=True,
@@ -460,6 +471,65 @@ async def list_tasks(status: Optional[str] = None, limit: int = 100, offset: int
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list tasks: {str(e)}",
+        )
+
+
+@router.get("/{task_id}/image")
+async def get_task_image(task_id: str):
+    """
+    取得任務的原始圖片
+
+    回傳任務上傳時的原始圖片（PNG/JPEG）
+
+    - **task_id**: 任務ID
+    """
+    try:
+        task_dir = Path(settings.OUTPUT_DIR) / task_id
+        if not task_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Task directory not found: {task_id}",
+            )
+
+        # 尋找原始圖片檔案（ocr_*.png 或 ocr_*.jpg）
+        image_files = list(task_dir.glob("ocr_*.*"))
+        # 過濾只保留圖片檔案
+        image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+        image_files = [
+            f for f in image_files
+            if f.suffix.lower() in image_extensions and "form_area" not in f.name
+        ]
+
+        if not image_files:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No image file found for task: {task_id}",
+            )
+
+        # 取第一個圖片檔案（通常只有一個）
+        image_path = image_files[0]
+        mime_type, _ = guess_type(image_path.name)
+        if mime_type is None:
+            mime_type = "image/png"
+
+        with open(image_path, "rb") as f:
+            content = f.read()
+
+        return Response(
+            content=content,
+            media_type=mime_type,
+            headers={
+                "Content-Disposition": _content_disposition_inline(image_path.name)
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get task image: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get task image: {str(e)}",
         )
 
 

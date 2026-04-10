@@ -58,8 +58,8 @@ DONATE_ITEMS_CONFIG = [
         "keywords": ["媒體", "製作", "與", "傳播"],
     },
     {
-        "name": "基金會營運支出",
-        "keywords": ["基金會", "營運", "支持"],  # 注意：原文是"支持"但組合成"支出"
+        "name": "基金會營運支持",
+        "keywords": ["基金會", "營運", "支持"],
     },
     {
         "name": "其他",
@@ -73,73 +73,96 @@ class DonationRulesProcessor:
 
     def __init__(self, blocks: List[Dict[str, Any]]):
         """
-        初始化處理器
+        初始化處理器，設定各階段變數
 
         Args:
             blocks: Vision.json 中的 blocks 陣列，每個 block 包含:
-                    - index: int
-                    - text: str
-                    - x: int
-                    - y: int
-                    - width: int
-                    - height: int
+                    - index: int index 值
+                    - text: str 文字內容
+                    - x: int x 軸值
+                    - y: int y 軸值
+                    - width: int 寬度
+                    - height: int 高度
         """
-        self.original_blocks = blocks
-        self.filtered_blocks: List[Dict[str, Any]] = []
-        self.donate_items: List[DonateItem] = []
-        self.donate_money: Optional[DonateMoney] = None
-        self.total_amount: str = ""
-        self.envelope_top_y: int = 0  # 信封上緣 Y 值（從"項目"或"金額"取得）
-        self.heji_y: int = 0  # "合計" 的 Y 軸值
-        self.heji_index: int = -1  # "合計" 的 index
+        self.original_blocks = blocks                   # 原始 blocks
+        self.filtered_blocks: List[Dict[str, Any]] = [] # 過濾後的 blocks
+
+        # 第一階段：過濾無效資料
+        self.stage1_filtered_indices: set = set()  # 第一階段過濾掉的 indices
+        self.envelope_top_y: int = 0                    # 信封上緣 Y 值（從"項目"或"金額"取得）
+
+        # 第二階段：組合捐獻項目並配對金額
+        self.donate_items: List[DonateItem] = []        # 捐獻項目
+        self.donate_money: Optional[DonateMoney] = None # 捐獻金額
+
+        # 第三階段：找出合計金額        
+        self.total_amount: str = ""                     # 合計金額        
+        self.heji_y: int = 0                            # "合計" 的 Y 軸值
+        self.heji_index: int = -1                       # "合計" 的 index
+
+        # 第四階段：過濾公告聲明
         self.announcement_filtered_indices: set = set()  # 第四階段過濾掉的公告 indices
+
         # 第五階段：不同意揭露聲明
-        self.agree_public_str: str = ""  # 合成的聲明文字
-        self.agree_public_avg_y: int = 0  # 聲明文字的 Y 軸平均值
-        self.agree_public_first_index: int = -1  # "本人" 的 index
-        self.no_receipt_str: str = ""  # "不需要奉獻收據" 合成文字
-        self.no_receipt_avg_y: int = 0  # 不需要收據的 Y 軸平均值
+        self.agree_public_str: str = ""                 # 合成的聲明文字
+        self.agree_public_avg_y: int = 0                # 聲明文字的 Y 軸平均值
+        self.agree_public_first_index: int = -1         # "本人" 的 index
+        # 第六階段：不需要奉獻收據
+        self.no_receipt_str: str = ""                   # "不需要奉獻收據" 合成文字
+        self.no_receipt_avg_y: int = 0                  # 不需要收據的 Y 軸平均值
+
         # 第六階段：收據選項
-        self.receipt_irs: Dict[str, Any] = {}  # 代上傳國稅局無紙本
-        self.receipt_electronic: Dict[str, Any] = {}  # 電子收據
-        self.receipt_paper: Dict[str, Any] = {}  # 年度紙本收據
-        self.receipt_irs_checked: bool = False  # IRS 是否有勾選
-        self.receipt_electronic_checked: bool = False  # 電子收據是否有勾選
-        self.receipt_paper_checked: bool = False  # 紙本收據是否有勾選
-        self.agree_public_checked: bool = False  # 不同意揭露是否有勾選
+        self.receipt_irs: Dict[str, Any] = {}           # 代上傳國稅局無紙本
+        self.receipt_electronic: Dict[str, Any] = {}    # 電子收據
+        self.receipt_paper: Dict[str, Any] = {}         # 年度紙本收據
+        self.receipt_irs_checked: bool = False          # IRS 是否有勾選
+        self.receipt_electronic_checked: bool = False   # 電子收據是否有勾選
+        self.receipt_paper_checked: bool = False        # 紙本收據是否有勾選
+        self.agree_public_checked: bool = False         # 不同意揭露是否有勾選(反向推導)
+
         # 第七階段：身分證字號
-        self.id_card_label: str = ""  # "身分證字號:"
-        self.id_card_number: str = ""  # 身分證字號（10碼）
+        self.id_card_label: str = ""                    # "身分證字號:"標籤
+        self.id_card_number: str = ""                   # 身分證字號（9或10碼）
+        self.id_card_incomplete: bool = False           # 身分證字號是否不完整（長度9，APP顯示紅字）
+
         # 第八階段：奉獻者姓名
-        self.donor_name_label: str = ""  # "奉獻者姓名:"
-        self.donor_name: str = ""  # 奉獻者姓名
-        self.found_name: bool = False  # 是否找到姓名的旗標
+        self.donor_name_label: str = ""                 # "奉獻者姓名:"標籤
+        self.donor_name: str = ""                       # 奉獻者姓名
+        self.found_name: bool = False                   # 是否找到姓名的旗標
+
         # 第九階段：奉獻日期
-        self.donation_date_label: str = ""  # "奉獻日期:"
-        self.donation_date: str = ""  # 奉獻日期（如 "115年7月29日"）
+        self.donation_date_label: str = ""              # "奉獻日期:"標籤
+        self.donation_date: str = ""                    # 奉獻日期（如 "115年7月29日"）
+
         # 第十階段：奉獻收據抬頭
-        self.receipt_title_label: str = ""  # "奉獻收據抬頭:"
-        self.receipt_title: str = ""  # 收據抬頭
-        self.found_title: bool = False  # 是否找到抬頭的旗標
+        self.receipt_title_label: str = ""              # "奉獻收據抬頭:"標籤
+        self.receipt_title: str = ""                    # 收據抬頭
+        self.found_title: bool = False                  # 是否找到抬頭的旗標
+
         # 第十一階段：奉獻收據寄送地址
-        self.mailing_address_label: str = ""  # "奉獻收據寄送地址:"
-        self.mailing_address: str = ""  # 寄送地址
+        self.mailing_address_label: str = ""            # "奉獻收據寄送地址:"標籤
+        self.mailing_address: str = ""                  # 寄送地址
+
         # 第十二階段：聯絡電話
-        self.telephone_label: str = ""  # "聯絡電話:"
-        self.telephone_number: str = ""  # 電話號碼
+        self.telephone_label: str = ""                  # "聯絡電話:"標籤
+        self.telephone_number: str = ""                 # 電話號碼
+
         # 第十三階段：電子信箱
-        self.mail_title: str = ""  # "電子信箱:"
-        self.mail: str = ""  # 電子郵箱地址
+        self.mail_title: str = ""                       # "電子信箱:"標籤
+        self.mail: str = ""                             # 電子郵箱地址
+
+        # 合併追蹤：記錄已被合併成較長字串的區塊 indices
+        self.merged_indices: set = set()                # 已合併的區塊 indices
 
     def process(self) -> Dict[str, Any]:
         """
-        執行完整的處理流程
+        執行完整的13階段處理流程
 
         Returns:
             處理結果，包含:
-            - output_text: 最終輸出文字
+            - output_text: 最終輸出文字(結構化資料)
             - donate_no: 捐獻項目結構化資料
-            - filtered_blocks: 過濾後的 blocks
+            - filtered_blocks: 過濾後的 blocks(原始資料)
         """
         logger.info(f"開始處理捐獻袋 OCR 規則，共 {len(self.original_blocks)} 個區塊")
 
@@ -253,8 +276,69 @@ class DonationRulesProcessor:
                     filtered_indices.add(b["index"])
                 logger.info(f"  [過濾] 連續4筆 {texts} (indices={[b['index'] for b in consecutive]})")
 
+        # 規則 5: 長度為 3 且 3 個字元相同，檢查相鄰區塊
+        # 若 index-1 或 index+1 有長度為 1 的特殊符號/英文大寫/數字，
+        # 或兩者 X 軸差距 < 30px，則這 2 筆都過濾
+        logger.info("[規則5] 檢查長度=3且3個字元相同的區塊及其相鄰區塊...")
+        index_to_block = {b["index"]: b for b in blocks}
+        for block in early_blocks:
+            if block["index"] in filtered_indices:
+                continue
+            text = block.get("text", "")
+            # 檢查長度為 3 且 3 個字元都相同
+            if len(text) == 3 and len(set(text)) == 1:
+                current_index = block["index"]
+                current_x = block.get("x", 0)
+                logger.debug(f"  找到長度3且相同字元: '{text}' at index={current_index}, x={current_x}")
+
+                # 檢查 index-1 和 index+1
+                prev_block = index_to_block.get(current_index - 1)
+                next_block = index_to_block.get(current_index + 1)
+
+                adjacent_to_filter = None  # 要一起過濾的相鄰區塊
+
+                for adj_block in [prev_block, next_block]:
+                    if adj_block is None:
+                        continue
+                    if adj_block["index"] in filtered_indices:
+                        continue
+
+                    adj_text = adj_block.get("text", "").strip()
+                    adj_x = adj_block.get("x", 0)
+
+                    # 條件 A: 長度為 1 且是特殊符號、英文大寫、或數字
+                    is_special_char = False
+                    if len(adj_text) == 1:
+                        char = adj_text
+                        # 特殊符號（非中文、非英文小寫）
+                        if char.isupper() or char.isdigit():
+                            is_special_char = True
+                        elif not char.isalnum():
+                            # 非英數字 = 特殊符號
+                            is_special_char = True
+
+                    # 條件 B: X 軸差距 < 30px
+                    x_distance = abs(adj_x - current_x)
+                    is_close_x = x_distance < 30
+
+                    if is_special_char or is_close_x:
+                        adjacent_to_filter = adj_block
+                        reason = []
+                        if is_special_char:
+                            reason.append(f"長度1特殊字元'{adj_text}'")
+                        if is_close_x:
+                            reason.append(f"X距離{x_distance}px<30")
+                        logger.info(f"  [過濾] '{text}'(index={current_index}) 與 '{adj_text}'(index={adj_block['index']}) - {', '.join(reason)}")
+                        break
+
+                if adjacent_to_filter:
+                    filtered_indices.add(current_index)
+                    filtered_indices.add(adjacent_to_filter["index"])
+
         # 建立過濾後的 blocks 列表
         self.filtered_blocks = [b for b in blocks if b["index"] not in filtered_indices]
+        # 儲存第一階段過濾的 indices（供後續勾選檢測排除使用）
+        self.stage1_filtered_indices = filtered_indices
 
         logger.info("-" * 40)
         logger.info(f"[階段1結果] 原 {len(blocks)} 個區塊 -> 過濾後 {len(self.filtered_blocks)} 個區塊")
@@ -370,77 +454,12 @@ class DonationRulesProcessor:
 
             self.donate_items.append(item)
 
-        # 2.2 檢查哪個捐獻項目有勾選標記
-        self._check_donation_item_checkboxes()
-
-        # 2.3 找出捐獻金額 (Donate_Money)
+        # 2.2 找出捐獻金額 (Donate_Money)
         # 從過濾後的 blocks 中找第一個不是 "0000" 的數字
         self._find_donate_money()
 
-        # 2.4 配對金額與捐獻項目（根據勾選狀態或 Y 軸距離）
+        # 2.3 配對金額與捐獻項目（Y 軸距離最近的就是被勾選的）
         self._match_money_to_item()
-
-    def _check_donation_item_checkboxes(self):
-        """檢查哪個捐獻項目有勾選標記"""
-        logger.info("[階段2.2] 檢查捐獻項目的勾選狀態...")
-
-        # 獲取所有原始區塊（包括被過濾的）
-        all_blocks = self.original_blocks
-
-        for item in self.donate_items:
-            if not item.indices:
-                continue
-
-            first_index = min(item.indices)
-            first_block = None
-            for block in all_blocks:
-                if block["index"] == first_index:
-                    first_block = block
-                    break
-
-            if not first_block:
-                continue
-
-            item_x = first_block.get("x", 0)
-            item_y = first_block.get("y", 0)
-
-            # 在同一行尋找勾選標記（Y 距離 < 100px，X 在右邊）
-            for block in all_blocks:
-                if block["index"] >= first_index:
-                    continue  # 只檢查前面的區塊
-
-                text = block.get("text", "").strip()
-                block_x = block.get("x", 0)
-                block_y = block.get("y", 0)
-
-                # 檢查是否為勾選標記
-                if not self._is_checkbox_mark(text):
-                    continue
-
-                # 檢查 Y 軸距離（同一行）
-                y_distance = abs(block_y - item_y)
-                if y_distance > 100:
-                    continue
-
-                # 檢查 X 軸位置（勾選標記在右邊，較高的 X 值）
-                x_diff = block_x - item_x
-                if x_diff <= 0 or x_diff > 500:
-                    continue
-
-                # 找到勾選標記
-                item.checked = True
-                logger.info(f"  [勾選] '{item.name}' 有勾選標記 '{text}' at index={block['index']}")
-                break
-
-            if not item.checked:
-                logger.debug(f"  [未勾選] '{item.name}'")
-
-        # 統計勾選情況
-        checked_items = [item.name for item in self.donate_items if item.checked]
-        if checked_items:
-            logger.info(f"  被勾選的項目: {checked_items}")
-        else:
-            logger.info("  沒有找到任何勾選的項目")
 
     def _find_donate_money(self):
         """找出捐獻金額（第一個非 0000 的數字）"""
@@ -475,8 +494,8 @@ class DonationRulesProcessor:
         logger.warning("  可能原因：所有數字區塊都被第一階段過濾掉了")
 
     def _match_money_to_item(self):
-        """根據勾選狀態或 Y 軸距離配對金額與捐獻項目"""
-        logger.info("[階段2.3] 配對金額與捐獻項目...")
+        """根據 Y 軸距離配對金額與捐獻項目（距離最近的就是被勾選的）"""
+        logger.info("[階段2.3] 配對金額與捐獻項目（Y 軸距離最近）...")
 
         if not self.donate_money:
             logger.warning("  [失敗] 沒有找到捐獻金額，無法配對")
@@ -485,18 +504,7 @@ class DonationRulesProcessor:
         money_y = self.donate_money.y
         logger.info(f"  金額 '{self.donate_money.amount}' 的 Y 軸: {money_y}")
 
-        # 優先使用勾選的項目
-        checked_items = [item for item in self.donate_items if item.checked]
-        if checked_items:
-            # 如果有勾選的項目，直接使用第一個勾選的項目
-            matched_item = checked_items[0]
-            logger.info(f"  [勾選配對] 找到 {len(checked_items)} 個勾選的項目")
-            logger.info(f"  [配對成功] 金額 {self.donate_money.amount} -> '{matched_item.name}' (勾選優先)")
-            self.matched_item_name = matched_item.name
-            return
-
-        # 沒有勾選的項目，使用 Y 軸距離匹配
-        logger.info("  沒有勾選的項目，使用 Y 軸距離匹配...")
+        # 直接使用 Y 軸距離匹配（不看勾選狀態）
         min_distance = float("inf")
         matched_item = None
 
@@ -512,8 +520,14 @@ class DonationRulesProcessor:
                 matched_item = item
 
         if matched_item:
+            # 標記該項目為被勾選（因為金額與它最近）
+            matched_item.checked = True
             logger.info(f"  [配對成功] 金額 {self.donate_money.amount} -> '{matched_item.name}' (Y軸距離={min_distance})")
             self.matched_item_name = matched_item.name
+            # 標記已合併的區塊（組成項目名稱的關鍵字）
+            for idx in matched_item.indices:
+                self.merged_indices.add(idx)
+            logger.debug(f"  [合併標記] 項目 '{matched_item.name}' 的 indices: {matched_item.indices}")
         else:
             self.matched_item_name = ""
             logger.warning("  [配對失敗] 無法配對金額到任何捐獻項目")
@@ -907,13 +921,17 @@ class DonationRulesProcessor:
                 break
 
         if prev_block:
+            prev_index = prev_block["index"]
             prev_text = prev_block.get("text", "").strip()
             prev_x = prev_block.get("x", 0)
             prev_y = prev_block.get("y", 0)
 
-            logger.debug(f"  勾選檢查(index-1): prev='{prev_text}' (index={prev_block['index']}, x={prev_x}, y={prev_y})")
+            logger.debug(f"  勾選檢查(index-1): prev='{prev_text}' (index={prev_index}, x={prev_x}, y={prev_y})")
 
-            if self._is_checkbox_mark(prev_text):
+            # 跳過被第一階段過濾的區塊（如規則5過濾的 "000" 和 "&"）
+            if prev_index in self.stage1_filtered_indices:
+                logger.debug(f"  勾選檢查(index-1): index={prev_index} 已被第一階段過濾，跳過")
+            elif self._is_checkbox_mark(prev_text):
                 y_distance = abs(prev_y - combined_avg_y)
                 x_distance = abs(prev_x - first_keyword_x)
                 if y_distance <= 100 and x_distance <= 500:
@@ -934,6 +952,11 @@ class DonationRulesProcessor:
 
             # 跳過已經是關鍵字的區塊或之後的區塊
             if block_index >= first_keyword_index:
+                continue
+
+            # 跳過被第一階段過濾的區塊（如規則5過濾的 "000" 和 "&"）
+            if block_index in self.stage1_filtered_indices:
+                logger.debug(f"    候選 '{text}' (index={block_index}): 已被第一階段過濾，跳過")
                 continue
 
             # 檢查是否為勾選標記
@@ -1196,7 +1219,12 @@ class DonationRulesProcessor:
                 # 檢查是否為有效的身分證字號格式
                 if self._is_valid_id_card(id_number):
                     self.id_card_number = id_number
-                    logger.info(f"找到有效身分證字號: {id_number}")
+                    # 檢查長度是否為 9（不完整，APP 顯示紅字）
+                    if len(id_number) == 9:
+                        self.id_card_incomplete = True
+                        logger.info(f"找到身分證字號: {id_number}（長度9，不完整，APP顯示紅字）")
+                    else:
+                        logger.info(f"找到有效身分證字號: {id_number}")
                 else:
                     logger.info(f"'{id_number}' 不是有效的身分證字號格式")
             else:
@@ -1206,11 +1234,15 @@ class DonationRulesProcessor:
 
     def _is_valid_id_card(self, text: str) -> bool:
         """
-        檢查是否為有效的台灣身分證字號格式
+        檢查是否為有效的身分證字號格式
 
-        格式：1個英文字母 + 9個數字 = 共10碼
+        格式：
+        - 長度為 9 或 10
+        - 第一個字元是英文字母
+        - 後面的字元都是數字
         """
-        if len(text) != 10:
+        # 長度必須是 9 或 10
+        if len(text) not in [9, 10]:
             return False
 
         # 第一個字元必須是英文字母
@@ -1218,7 +1250,7 @@ class DonationRulesProcessor:
         if not first_char.isalpha():
             return False
 
-        # 後面9個字元必須是數字
+        # 後面的字元必須都是數字
         remaining = text[1:]
         if not remaining.isdigit():
             return False
@@ -1290,30 +1322,54 @@ class DonationRulesProcessor:
         self.donor_name_label = "奉獻者姓名:"
         logger.info(f"  奉獻 index={fengxian_index}, : index={colon_index}")
 
-        # 方法一：往前找姓名（從 "奉獻" 的前一個 index 開始）
-        self._find_donor_name_backwards(index_to_block, fengxian_index)
+        # 方法一：往前找姓名（從 "奉獻" 的前一個 index 開始，找到 "收據" 為止）
+        name_backwards = self._find_donor_name_backwards(index_to_block, fengxian_index)
 
-        # 方法二：如果往前沒找到，往後找
-        if not self.found_name:
-            self._find_donor_name_forwards(all_blocks, index_to_block, colon_index)
+        # 方法二：往後找姓名（從 ":" 的下一個 index 開始，找到下一個 "奉獻" 為止）
+        name_forwards = self._find_donor_name_forwards(all_blocks, index_to_block, colon_index)
 
-    def _find_donor_name_backwards(self, index_to_block: Dict[int, Dict], fengxian_index: int):
+        # 合併往前和往後找到的姓名
+        combined_name_parts = []
+        if name_backwards:
+            combined_name_parts.append(name_backwards)
+        if name_forwards:
+            combined_name_parts.append(name_forwards)
+
+        if combined_name_parts:
+            self.donor_name = "".join(combined_name_parts)
+            self.found_name = True
+            logger.info(f"  合併姓名: 往前='{name_backwards or ''}' + 往後='{name_forwards or ''}' = '{self.donor_name}'")
+
+    # 身分證字號標籤關鍵字（要排除的）
+    ID_CARD_LABEL_KEYWORDS = ["身分", "證", "字號"]
+
+    def _find_donor_name_backwards(self, index_to_block: Dict[int, Dict], fengxian_index: int) -> Optional[str]:
         """
         往前找奉獻者姓名
 
         從 "奉獻" 的前一個 index 開始往前找，
-        直到找到 ":" 或有效身分證字號才停止，
-        跳過 "0000000000" 或任何長度為 10 的字串（視為無效），
-        然後合併 ":" 的下一個 index 到 "奉獻" 前一個 index 的所有內容（排除 10 字元字串）
+        直到找到 "收據" 才停止，
+        中間遇到 ":" 或長度為9~10的身份證字號時記錄但繼續往前，
+        找到 "收據" 後，從 "收據" 的下一個 index 到 "奉獻" 的前一個 index 的內容合併，
+        排除：
+        - "0000000000"
+        - 長度為 9 或 10 的字串
+        - 身分證字號標籤關鍵字
+        - 已被標記為「已合併」的區塊
+
+        Returns:
+            找到的姓名字串，或 None
         """
         if fengxian_index <= 0:
-            logger.info("奉獻 index 太小，無法往前找")
-            return
+            logger.info("  往前找: 奉獻 index 太小，無法往前找")
+            return None
 
         # 從 "奉獻" 的前一個 index 開始往前找
         current_index = fengxian_index - 1
-        stop_index = -1  # 停止位置（":" 的 index）
-        skip_indices = set()  # 要跳過的 index（10 字元字串）
+        receipt_index = -1  # "收據" 的 index
+        skip_indices = set()  # 要跳過的 index
+
+        logger.info(f"  往前找: 從 index={current_index} 開始往前找 '收據'...")
 
         while current_index >= 0:
             block = index_to_block.get(current_index)
@@ -1323,57 +1379,111 @@ class DonationRulesProcessor:
 
             text = block.get("text", "").strip()
 
-            # 檢查是否為 ":"
-            if text in [":", "：", ";"]:
-                stop_index = current_index
-                logger.debug(f"往前找到 ':' at index={current_index}")
+            # 檢查是否為 "收據"
+            if text == "收據":
+                receipt_index = current_index
+                logger.info(f"  往前找: 找到 '收據' at index={current_index}")
                 break
 
-            # 檢查是否為長度 10 的字串（包括 "0000000000" 和身分證字號格式）
-            # 這些都視為無效，跳過不加入姓名
-            if len(text) == 10:
+            # 檢查是否為 ":" - 記錄但繼續往前
+            if text in [":", "：", ";"]:
                 skip_indices.add(current_index)
-                logger.debug(f"往前跳過長度10的字串 '{text}' at index={current_index}")
+                logger.debug(f"  往前找: 遇到 ':' at index={current_index}，記錄並繼續")
+                current_index -= 1
+                continue
+
+            # 檢查是否為 "0000000000"
+            if text == "0000000000":
+                skip_indices.add(current_index)
+                logger.debug(f"  往前找: 跳過 '0000000000' at index={current_index}")
+                current_index -= 1
+                continue
+
+            # 檢查是否為長度 9 或 10 的字串（包括身分證字號格式）
+            if len(text) == 9 or len(text) == 10:
+                skip_indices.add(current_index)
+                logger.debug(f"  往前找: 跳過長度{len(text)}的字串 '{text}' at index={current_index}")
+                current_index -= 1
+                continue
+
+            # 檢查是否為身分證字號標籤關鍵字（"身分"、"證"、"字號"）
+            if text in self.ID_CARD_LABEL_KEYWORDS:
+                skip_indices.add(current_index)
+                logger.debug(f"  往前找: 跳過身分證標籤 '{text}' at index={current_index}")
                 current_index -= 1
                 continue
 
             current_index -= 1
 
-        if stop_index < 0:
-            logger.info("往前找沒有找到 ':'")
-            return
+        if receipt_index < 0:
+            logger.info("  往前找: 沒有找到 '收據'")
+            return None
 
-        # 合併從 stop_index + 1 到 fengxian_index - 1 的所有內容（排除 skip_indices）
+        # 合併從 receipt_index + 1 到 fengxian_index - 1 的所有內容
+        # 排除：skip_indices、已被標記為「已合併」的區塊
+        logger.info(f"  往前找: 合併 index {receipt_index + 1} 到 {fengxian_index - 1} 的內容（排除無效項和已合併區塊）")
         name_parts = []
-        for idx in range(stop_index + 1, fengxian_index):
+        merged_name_indices = []  # 記錄被合併的 indices
+        for idx in range(receipt_index + 1, fengxian_index):
+            # 跳過 skip_indices
             if idx in skip_indices:
+                block = index_to_block.get(idx)
+                if block:
+                    logger.debug(f"    跳過(無效) index={idx}: '{block.get('text', '')}'")
                 continue
+
+            # 跳過已被標記為「已合併」的區塊
+            if idx in self.merged_indices:
+                block = index_to_block.get(idx)
+                if block:
+                    logger.debug(f"    跳過(已合併) index={idx}: '{block.get('text', '')}'")
+                continue
+
             block = index_to_block.get(idx)
             if block:
                 text = block.get("text", "").strip()
                 if text:
+                    # 檢查是否包含數字 - 姓名不應包含數字
+                    if any(c.isdigit() for c in text):
+                        logger.debug(f"    跳過(含數字) index={idx}: '{text}'")
+                        continue
                     name_parts.append(text)
+                    merged_name_indices.append(idx)
+                    logger.debug(f"    加入 index={idx}: '{text}'")
 
         if name_parts:
-            self.donor_name = "".join(name_parts)
-            self.found_name = True
-            logger.info(f"往前找到奉獻者姓名: {self.donor_name}")
+            candidate_name = "".join(name_parts)
+            # 標記已合併的區塊
+            for idx in merged_name_indices:
+                self.merged_indices.add(idx)
+            logger.info(f"  往前找: 找到姓名部分 '{candidate_name}'")
+            logger.debug(f"  往前找: [合併標記] indices: {merged_name_indices}")
+            return candidate_name
         else:
-            logger.info("往前找沒有找到姓名內容")
+            logger.info("  往前找: 沒有找到姓名內容")
+            return None
 
-    def _find_donor_name_forwards(self, all_blocks: List[Dict], index_to_block: Dict[int, Dict], colon_index: int):
+    def _find_donor_name_forwards(self, all_blocks: List[Dict], index_to_block: Dict[int, Dict], colon_index: int) -> Optional[str]:
         """
         往後找奉獻者姓名
 
         從 ":" 的下一個 index 開始往後找，
+        如果找到的是字串且不是 "奉獻" 就加入 name，
         直到找到下一個 "奉獻" 才停止，
         "奉獻" 不加入姓名中
+        跳過已被標記為「已合併」的區塊
+
+        Returns:
+            找到的姓名字串，或 None
         """
         if colon_index < 0:
-            logger.info("沒有找到 ':'，無法往後找")
-            return
+            logger.info("  往後找: 沒有找到 ':'，無法往後找")
+            return None
+
+        logger.info(f"  往後找: 從 ':' 的下一個 index={colon_index + 1} 開始...")
 
         name_parts = []
+        merged_name_indices = []  # 記錄被合併的 indices
         current_index = colon_index + 1
 
         # 取得最大 index
@@ -1389,22 +1499,54 @@ class DonationRulesProcessor:
 
             # 如果找到 "奉獻"，停止（不加入）
             if text == "奉獻":
-                logger.debug(f"往後找到 '奉獻' at index={current_index}，停止")
+                logger.info(f"  往後找: 找到 '奉獻' at index={current_index}，停止")
                 break
 
-            # 加入姓名
+            # 跳過已被標記為「已合併」的區塊
+            if current_index in self.merged_indices:
+                logger.debug(f"  往後找: 跳過(已合併) index={current_index}: '{text}'")
+                current_index += 1
+                continue
+
+            # 加入姓名（字串且不是 "奉獻"）
             if text:
+                # 跳過冒號（半形或全形）
+                if text in [":", "：", ";"]:
+                    logger.debug(f"  往後找: 跳過(冒號) index={current_index}: '{text}'")
+                    current_index += 1
+                    continue
+                # 跳過 "0000000000"
+                if text == "0000000000":
+                    logger.debug(f"  往後找: 跳過(0000000000) index={current_index}")
+                    current_index += 1
+                    continue
+                # 跳過長度為 9 或 10 的字串（可能是身分證字號）
+                if len(text) == 9 or len(text) == 10:
+                    logger.debug(f"  往後找: 跳過(長度{len(text)}) index={current_index}: '{text}'")
+                    current_index += 1
+                    continue
+                # 檢查是否包含數字 - 姓名不應包含數字
+                if any(c.isdigit() for c in text):
+                    logger.debug(f"  往後找: 跳過(含數字) index={current_index}: '{text}'")
+                    current_index += 1
+                    continue
                 name_parts.append(text)
-                logger.debug(f"往後找到姓名部分 '{text}' at index={current_index}")
+                merged_name_indices.append(current_index)
+                logger.debug(f"  往後找: 加入姓名部分 '{text}' at index={current_index}")
 
             current_index += 1
 
         if name_parts:
-            self.donor_name = "".join(name_parts)
-            self.found_name = True
-            logger.info(f"往後找到奉獻者姓名: {self.donor_name}")
+            candidate_name = "".join(name_parts)
+            # 標記已合併的區塊
+            for idx in merged_name_indices:
+                self.merged_indices.add(idx)
+            logger.info(f"  往後找: 找到姓名部分 '{candidate_name}'")
+            logger.debug(f"  往後找: [合併標記] indices: {merged_name_indices}")
+            return candidate_name
         else:
-            logger.info("往後找沒有找到姓名內容")
+            logger.info("  往後找: 沒有找到姓名內容")
+            return None
 
     # ==================== 第九階段：奉獻日期 ====================
 
@@ -1460,86 +1602,231 @@ class DonationRulesProcessor:
         尋找奉獻日期
 
         日期格式可能是：
-        - "115", "年", "7", "月", "29", "日" -> "115年7月29日"
-        - "2024", "年", "7", "月", "29", "日" -> "2024年7月29日"
-        - "115/7/29" -> 直接使用
+        - 正常: "115", "年", "7", "月", "29", "日" -> "115年7月29日"
+        - 正常: "2024", "年", "7", "月", "29", "日" -> "2024年7月29日"
+        - 正常: "115/7/29" -> 直接使用
+        - 異常: "2018", "年", "2", "月", ":", "3", "/", "B" -> 需特殊處理
+
+        異常處理規則：
+        1. ":" 到 "年" 之間的所有字串合併為「年份字串」，最多4位數
+           - 若超過4位數，只取 "年" 前面長度為 3 或 4 的數字字串
+        2. "年" 到 "月" 之間的所有字串合併為「月份字串」，檢查範圍 1~12
+        3. 若 "月" 之後有 "日"：將 "月" 到 "日" 之間的字串合併（排除 ":"）
+        4. 若 "月" 之後無 "日"：從 "月" 之後開始，排除 ":" 一路串接直到 "奉獻"
         """
         if colon_index < 0:
             logger.info("沒有找到 ':'，無法尋找日期")
             return
 
-        date_parts = []
+        merged_date_indices = []  # 記錄被合併的 indices
         current_index = colon_index + 1
         max_index = max(b["index"] for b in all_blocks) if all_blocks else 0
 
-        # 持續尋找直到組成完整日期或遇到非日期內容
-        found_year = False
-        found_month = False
-        found_day = False
-
+        # 收集從 ":" 之後到結束的所有區塊
+        date_blocks = []
         while current_index <= max_index:
             block = index_to_block.get(current_index)
-            if block is None:
-                current_index += 1
-                continue
-
-            text = block.get("text", "").strip()
-
-            # 檢查是否為日期的一部分
-            is_date_part = False
-
-            # 數字（年份、月份、日期）
-            if text.isdigit():
-                is_date_part = True
-                date_parts.append(text)
-                logger.debug(f"找到日期數字 '{text}' at index={current_index}")
-
-            # 年、月、日 標記
-            elif text in self.DATE_MARKERS:
-                is_date_part = True
-                date_parts.append(text)
-                if text == "年":
-                    found_year = True
-                elif text == "月":
-                    found_month = True
-                elif text == "日":
-                    found_day = True
-                logger.debug(f"找到日期標記 '{text}' at index={current_index}")
-
-            # 斜線日期格式（如 115/7/29 或 2024/7/29）
-            elif "/" in text and any(c.isdigit() for c in text):
-                is_date_part = True
-                date_parts.append(text)
-                # 斜線格式視為完整日期
-                found_year = found_month = found_day = True
-                logger.debug(f"找到斜線日期 '{text}' at index={current_index}")
-
-            # 如果不是日期部分，停止尋找
-            if not is_date_part:
-                logger.debug(f"遇到非日期內容 '{text}'，停止尋找")
-                break
-
-            # 如果已經找到完整的 年月日，停止
-            if found_year and found_month and found_day:
-                current_index += 1
-                # 檢查是否還有更多日期內容（可能還有其他字元）
-                next_block = index_to_block.get(current_index)
-                if next_block:
-                    next_text = next_block.get("text", "").strip()
-                    # 如果下一個不是日期相關，就停止
-                    if not (next_text.isdigit() or next_text in self.DATE_MARKERS or "/" in next_text):
-                        break
-                else:
+            if block is not None:
+                text = block.get("text", "").strip()
+                # 遇到下一個 "奉獻" 就停止
+                if text == "奉獻":
+                    logger.debug(f"遇到 '奉獻'，停止日期搜尋 at index={current_index}")
                     break
-                continue
-
+                date_blocks.append((current_index, text))
             current_index += 1
 
-        if date_parts:
-            self.donation_date = "".join(date_parts)
-            logger.info(f"找到奉獻日期: {self.donation_date}")
+        if not date_blocks:
+            logger.info("未找到任何日期相關區塊")
+            return
+
+        logger.debug(f"日期相關區塊: {[(idx, txt) for idx, txt in date_blocks]}")
+
+        # 檢查是否為斜線日期格式（如 115/7/29）
+        for idx, text in date_blocks:
+            if "/" in text and any(c.isdigit() for c in text):
+                self.donation_date = text
+                self.merged_indices.add(idx)
+                logger.info(f"找到斜線日期: {self.donation_date}")
+                return
+
+        # 尋找 年、月、日 標記的位置
+        year_marker_pos = -1
+        month_marker_pos = -1
+        day_marker_pos = -1
+
+        for i, (idx, text) in enumerate(date_blocks):
+            if text == "年" and year_marker_pos == -1:
+                year_marker_pos = i
+            elif text == "月" and month_marker_pos == -1:
+                month_marker_pos = i
+            elif text == "日" and day_marker_pos == -1:
+                day_marker_pos = i
+
+        logger.debug(f"標記位置: 年={year_marker_pos}, 月={month_marker_pos}, 日={day_marker_pos}")
+
+        # 如果沒有找到 "年" 標記，無法處理
+        if year_marker_pos == -1:
+            logger.info("未找到 '年' 標記，無法解析日期")
+            return
+
+        # 提取年份字串：從開頭到 "年" 之間的所有內容
+        year_parts = []
+        year_part_indices = []
+        for i in range(year_marker_pos):
+            idx, text = date_blocks[i]
+            if text not in [":", "："]:  # 排除冒號
+                year_parts.append(text)
+                year_part_indices.append(idx)
+
+        year_string_raw = "".join(year_parts)
+
+        # 年份最多4位數的處理
+        # 只保留數字部分
+        year_digits = "".join(c for c in year_string_raw if c.isdigit())
+
+        if len(year_digits) > 4:
+            # 超過4位數，尋找 "年" 前面長度為 3 或 4 的數字字串
+            # 從後往前找最後一個 3~4 位數的數字
+            logger.debug(f"年份數字 '{year_digits}' 超過4位，嘗試提取合理年份")
+
+            # 檢查最後一個 year_part 是否為 3~4 位數字
+            found_valid_year = False
+            for i in range(len(year_parts) - 1, -1, -1):
+                part = year_parts[i]
+                if part.isdigit() and 3 <= len(part) <= 4:
+                    year_string = part
+                    # 只標記這個區塊
+                    merged_date_indices = [year_part_indices[i]]
+                    found_valid_year = True
+                    logger.debug(f"找到有效年份字串: '{year_string}'")
+                    break
+
+            if not found_valid_year:
+                # 如果找不到 3~4 位的數字，取最後 3 或 4 位
+                if len(year_digits) >= 4:
+                    year_string = year_digits[-4:]
+                else:
+                    year_string = year_digits[-3:]
+                merged_date_indices = year_part_indices.copy()
+                logger.debug(f"無法找到獨立的年份，取最後 {len(year_string)} 位: '{year_string}'")
         else:
-            logger.info("未找到奉獻日期內容")
+            year_string = year_digits
+            merged_date_indices = year_part_indices.copy()
+
+        merged_date_indices.append(date_blocks[year_marker_pos][0])  # 加入 "年" 的 index
+
+        logger.debug(f"年份字串: '{year_string}'")
+
+        # 如果沒有找到 "月" 標記，只輸出年份
+        if month_marker_pos == -1:
+            if year_string:
+                self.donation_date = f"{year_string}年"
+                for idx in merged_date_indices:
+                    self.merged_indices.add(idx)
+                logger.info(f"找到奉獻日期（僅年份）: {self.donation_date}")
+            return
+
+        # 提取月份字串："年" 之後到 "月" 之間的所有內容
+        month_parts = []
+        for i in range(year_marker_pos + 1, month_marker_pos):
+            idx, text = date_blocks[i]
+            if text not in [":", "："]:  # 排除冒號
+                month_parts.append(text)
+                merged_date_indices.append(idx)
+        month_string = "".join(month_parts)
+        # 只保留數字部分
+        month_string = "".join(c for c in month_string if c.isdigit())
+        merged_date_indices.append(date_blocks[month_marker_pos][0])  # 加入 "月" 的 index
+
+        # 月份合理性檢查（1~12）
+        month_num = None
+        if month_string.isdigit():
+            month_num = int(month_string)
+            if month_num < 1 or month_num > 12:
+                logger.warning(f"月份 '{month_string}' 不在合理範圍 1~12")
+
+        logger.debug(f"月份字串: '{month_string}' (數值: {month_num})")
+
+        # 如果沒有找到 "日" 標記
+        if day_marker_pos == -1:
+            # 從 "月" 之後開始，排除 ":" 一路串接直到 "奉獻" 或結束
+            day_parts = []
+            for i in range(month_marker_pos + 1, len(date_blocks)):
+                idx, text = date_blocks[i]
+                if text == "奉獻":  # 遇到 "奉獻" 停止
+                    break
+                if text not in [":", "："]:  # 只排除冒號，其他都串接
+                    day_parts.append(text)
+                    merged_date_indices.append(idx)
+
+            day_string = "".join(day_parts)
+            # 只保留數字部分
+            day_string = "".join(c for c in day_string if c.isdigit())
+
+            if day_string:
+                day_num = int(day_string) if day_string.isdigit() else 0
+                if 1 <= day_num <= 31:
+                    self.donation_date = f"{year_string}年{month_string}月{day_string}日"
+                    logger.info(f"找到奉獻日期（組合，無日標記）: {self.donation_date}")
+                else:
+                    # 日期超出範圍，嘗試只取前兩位
+                    if len(day_string) >= 2:
+                        day_string_trimmed = day_string[:2]
+                        day_num_trimmed = int(day_string_trimmed)
+                        if 1 <= day_num_trimmed <= 31:
+                            self.donation_date = f"{year_string}年{month_string}月{day_string_trimmed}日"
+                            logger.info(f"找到奉獻日期（日期截斷）: {self.donation_date}")
+                        else:
+                            self.donation_date = f"{year_string}年{month_string}月"
+                            logger.info(f"找到奉獻日期（日期不合理，僅年月）: {self.donation_date}")
+                    else:
+                        self.donation_date = f"{year_string}年{month_string}月"
+                        logger.info(f"找到奉獻日期（日期不合理，僅年月）: {self.donation_date}")
+            else:
+                self.donation_date = f"{year_string}年{month_string}月"
+                logger.info(f"找到奉獻日期（僅年月）: {self.donation_date}")
+
+            for idx in merged_date_indices:
+                self.merged_indices.add(idx)
+            return
+
+        # 有 "日" 標記的情況：提取 "月" 到 "日" 之間的內容（排除 ":"）
+        day_parts = []
+        for i in range(month_marker_pos + 1, day_marker_pos):
+            idx, text = date_blocks[i]
+            if text not in [":", "："]:  # 只排除冒號
+                day_parts.append(text)
+                merged_date_indices.append(idx)
+        merged_date_indices.append(date_blocks[day_marker_pos][0])  # 加入 "日" 的 index
+
+        day_string = "".join(day_parts)
+        # 只保留數字部分
+        day_string = "".join(c for c in day_string if c.isdigit())
+
+        logger.debug(f"日字串: '{day_string}'")
+
+        # 日期合理性檢查（1~31）
+        if day_string:
+            day_num = int(day_string) if day_string.isdigit() else 0
+            if day_num < 1 or day_num > 31:
+                logger.warning(f"日期 '{day_string}' 不在合理範圍 1~31")
+                # 嘗試只取前兩位
+                if len(day_string) >= 2:
+                    day_string = day_string[:2]
+
+        # 組合最終日期
+        if year_string and month_string:
+            if day_string:
+                self.donation_date = f"{year_string}年{month_string}月{day_string}日"
+            else:
+                self.donation_date = f"{year_string}年{month_string}月"
+
+            for idx in merged_date_indices:
+                self.merged_indices.add(idx)
+            logger.info(f"找到奉獻日期: {self.donation_date}")
+            logger.debug(f"  [合併標記] 日期的 indices: {merged_date_indices}")
+        else:
+            logger.info("未找到完整的奉獻日期內容")
 
     # ==================== 第十階段：奉獻收據抬頭 ====================
 
@@ -1651,17 +1938,23 @@ class DonationRulesProcessor:
 
         # 合併從 stop_index + 1 到 fengxian_index - 1 的所有內容
         title_parts = []
+        merged_title_indices = []  # 記錄被合併的 indices
         for idx in range(stop_index + 1, fengxian_index):
             block = index_to_block.get(idx)
             if block:
                 text = block.get("text", "").strip()
                 if text:
                     title_parts.append(text)
+                    merged_title_indices.append(idx)
 
         if title_parts:
             self.receipt_title = "".join(title_parts)
             self.found_title = True
+            # 標記已合併的區塊
+            for idx in merged_title_indices:
+                self.merged_indices.add(idx)
             logger.info(f"往前找到奉獻收據抬頭: {self.receipt_title}")
+            logger.debug(f"  [合併標記] 抬頭的 indices: {merged_title_indices}")
         else:
             logger.info("往前找沒有找到抬頭內容")
 
@@ -1678,6 +1971,7 @@ class DonationRulesProcessor:
             return
 
         title_parts = []
+        merged_title_indices = []  # 記錄被合併的 indices
         current_index = colon_index + 1
 
         # 取得最大 index
@@ -1699,6 +1993,7 @@ class DonationRulesProcessor:
             # 加入抬頭
             if text:
                 title_parts.append(text)
+                merged_title_indices.append(current_index)
                 logger.debug(f"往後找到抬頭部分 '{text}' at index={current_index}")
 
             current_index += 1
@@ -1706,7 +2001,11 @@ class DonationRulesProcessor:
         if title_parts:
             self.receipt_title = "".join(title_parts)
             self.found_title = True
+            # 標記已合併的區塊
+            for idx in merged_title_indices:
+                self.merged_indices.add(idx)
             logger.info(f"往後找到奉獻收據抬頭: {self.receipt_title}")
+            logger.debug(f"  [合併標記] 抬頭的 indices: {merged_title_indices}")
         else:
             logger.info("往後找沒有找到抬頭內容")
 
@@ -1791,13 +2090,18 @@ class DonationRulesProcessor:
         從 ":" 的下一個 index 開始往後找，
         直到找到 "聯絡" 才停止，
         "聯絡" 不加入地址中
-        如果開頭的 6 字元字串有 5 個以上的 "0"，則忽略
+
+        開頭無效字串過濾規則：
+        1. 長度為 6，內容是 "000000"（6 個 0）-> 忽略
+        2. 長度為 5，內容是 "00000"（5 個 0）-> 忽略
+        3. 長度為 6，其中有 5 個以上的 "0" -> 忽略
         """
         if colon_index < 0:
             logger.info("沒有找到 ':'，無法尋找地址")
             return
 
         address_parts = []
+        merged_address_indices = []  # 記錄被合併的 indices
         current_index = colon_index + 1
         is_first_part = True  # 標記是否為地址的第一個部分
 
@@ -1819,24 +2123,46 @@ class DonationRulesProcessor:
 
             # 加入地址
             if text:
-                # 檢查第一個部分：如果是 6 字元且有 5 個以上的 "0"，則忽略
-                if is_first_part and len(text) == 6:
-                    zero_count = text.count("0")
-                    if zero_count >= 5:
-                        logger.debug(f"忽略無效開頭 '{text}' at index={current_index}（含 {zero_count} 個 '0'）")
+                # 檢查第一個部分：過濾無效開頭字串
+                if is_first_part:
+                    should_skip = False
+
+                    # 規則1: 長度為 6，內容是 "000000"
+                    if len(text) == 6 and text == "000000":
+                        logger.debug(f"忽略無效開頭 '{text}' at index={current_index}（6個0）")
+                        should_skip = True
+
+                    # 規則2: 長度為 5，內容是 "00000"
+                    elif len(text) == 5 and text == "00000":
+                        logger.debug(f"忽略無效開頭 '{text}' at index={current_index}（5個0）")
+                        should_skip = True
+
+                    # 規則3: 長度為 6，其中有 5 個以上的 "0"
+                    elif len(text) == 6:
+                        zero_count = text.count("0")
+                        if zero_count >= 5:
+                            logger.debug(f"忽略無效開頭 '{text}' at index={current_index}（含 {zero_count} 個 '0'）")
+                            should_skip = True
+
+                    if should_skip:
                         current_index += 1
                         is_first_part = False  # 已處理第一個部分
                         continue
 
                 is_first_part = False  # 已處理第一個部分
                 address_parts.append(text)
+                merged_address_indices.append(current_index)
                 logger.debug(f"找到地址部分 '{text}' at index={current_index}")
 
             current_index += 1
 
         if address_parts:
             self.mailing_address = "".join(address_parts)
+            # 標記已合併的區塊
+            for idx in merged_address_indices:
+                self.merged_indices.add(idx)
             logger.info(f"找到奉獻收據寄送地址: {self.mailing_address}")
+            logger.debug(f"  [合併標記] 地址的 indices: {merged_address_indices}")
         else:
             logger.info("未找到奉獻收據寄送地址內容")
 
@@ -1941,6 +2267,9 @@ class DonationRulesProcessor:
     # 電子信箱標籤關鍵字
     EMAIL_KEYWORDS = ["電子", "信箱", ":"]
 
+    # 電子郵箱結尾範本
+    EMAIL_DOMAIN_SUFFIXES = [".com", ".edu", ".gov", ".org", ".tw"]
+
     def _stage13_email(self):
         """第十三階段：處理電子信箱"""
         logger.info("===== 第十三階段：電子信箱 =====")
@@ -2007,6 +2336,61 @@ class DonationRulesProcessor:
 
         return True
 
+    def _fix_email_suffix(self, email: str) -> str:
+        """
+        修正電子郵箱結尾
+
+        如果結尾與範本（.com, .edu, .gov, .org, .tw）相差一個字，
+        則以範本替換原辨識輸出
+
+        Args:
+            email: 原始電子郵箱地址
+
+        Returns:
+            修正後的電子郵箱地址
+        """
+        if not email:
+            return email
+
+        # 檢查每個範本結尾
+        for suffix in self.EMAIL_DOMAIN_SUFFIXES:
+            suffix_len = len(suffix)
+
+            # 確保 email 長度足夠
+            if len(email) < suffix_len:
+                continue
+
+            # 取得 email 結尾
+            email_ending = email[-suffix_len:]
+
+            # 完全匹配，不需要修正
+            if email_ending == suffix:
+                return email
+
+            # 計算差異字元數
+            diff_count = sum(1 for a, b in zip(email_ending, suffix) if a != b)
+
+            # 如果長度相同且只差一個字，替換為範本
+            if diff_count == 1:
+                fixed_email = email[:-suffix_len] + suffix
+                logger.info(f"  修正電子郵箱結尾: '{email}' -> '{fixed_email}' (範本: {suffix})")
+                return fixed_email
+
+        # 檢查長度差一的情況（例如 ".co" vs ".com"）
+        for suffix in self.EMAIL_DOMAIN_SUFFIXES:
+            suffix_len = len(suffix)
+
+            # 檢查 email 結尾是否為範本少一個字（如 ".co" vs ".com"）
+            if len(email) >= suffix_len - 1:
+                email_ending = email[-(suffix_len - 1):]
+                # 如果 email 結尾是範本的前 n-1 個字元
+                if email_ending == suffix[:-1]:
+                    fixed_email = email + suffix[-1]
+                    logger.info(f"  補齊電子郵箱結尾: '{email}' -> '{fixed_email}' (範本: {suffix})")
+                    return fixed_email
+
+        return email
+
     def _find_email_address(self, all_blocks: List[Dict], index_to_block: Dict[int, Dict], colon_index: int):
         """
         尋找電子郵箱地址
@@ -2014,6 +2398,7 @@ class DonationRulesProcessor:
         從 ":" 的下一個 index 開始往後找，
         直到找到最後一筆才停止，
         Email 內容必須是 ASCII 可見字元且包含 '@'
+        找到後會修正結尾（如 .con -> .com）
         """
         if colon_index < 0:
             logger.info("沒有找到 ':'，無法尋找電子郵箱")
@@ -2042,9 +2427,37 @@ class DonationRulesProcessor:
             current_index += 1
 
         if self.mail:
-            logger.info(f"找到電子信箱: {self.mail}")
+            # 修正電子郵箱結尾（如果與範本相差一個字）
+            original_mail = self.mail
+            self.mail = self._fix_email_suffix(self.mail)
+            if original_mail != self.mail:
+                logger.info(f"電子信箱已修正: '{original_mail}' -> '{self.mail}'")
+            else:
+                logger.info(f"找到電子信箱: {self.mail}")
         else:
             logger.info("未找到電子郵箱地址")
+
+    # ==================== 第十四階段：修正重複冒號 ====================
+
+    def _fix_double_colons(self, text: str) -> str:
+        """
+        修正重複冒號
+
+        輸出格式為「標題:內容」，如果中間出現多個冒號，只保留一個。
+        例如：「身分證字號::F123456789」→「身分證字號:F123456789」
+        """
+        if not text:
+            return text
+
+        # 將連續的冒號（包括全形和半形）替換為單一半形冒號
+        import re
+        # 匹配連續的冒號（半形:或全形：）
+        fixed = re.sub(r'[:：]+', ':', text)
+
+        if fixed != text:
+            logger.debug(f"修正重複冒號: '{text}' -> '{fixed}'")
+
+        return fixed
 
     # ==================== 產生輸出 ====================
 
@@ -2196,6 +2609,18 @@ class DonationRulesProcessor:
             elif not self.mail:
                 logger.info("  X: 電子信箱 - 未找到電子信箱地址")
 
+        # 第十四階段：修正重複冒號
+        logger.info("=" * 60)
+        logger.info("===== 第十四階段：修正重複冒號 =====")
+        logger.info("=" * 60)
+        fixed_output_lines = []
+        for line in output_lines:
+            fixed_line = self._fix_double_colons(line)
+            if fixed_line != line:
+                logger.info(f"  修正: '{line}' -> '{fixed_line}'")
+            fixed_output_lines.append(fixed_line)
+        output_lines = fixed_output_lines
+
         output_text = "\n".join(output_lines)
 
         # 最終輸出摘要
@@ -2206,25 +2631,27 @@ class DonationRulesProcessor:
             logger.info(f">>> {line}")
         logger.info("=" * 60)
 
-        # 建立結構化的 Donate No 資料
+        # 建立結構化的 Donate No 資料（符合用戶要求的格式）
         donate_no = {
-            "envelope_top_y": self.envelope_top_y,
-            "items": [],
+            "Donate No": {
+                "envelope_top_y": self.envelope_top_y,
+            }
         }
 
+        # 將四個捐獻項目放在 Donate No 下
         for i, item in enumerate(self.donate_items, 1):
-            donate_no["items"].append({
-                f"Donate Item-{i}": {
-                    "name": item.name,
-                    "keywords": item.keywords,
-                    "indices": item.indices,
-                    "y_values": item.y_values,
-                    "avg_y": item.avg_y,
-                }
-            })
+            donate_no["Donate No"][f"Donate Item-{i}"] = {
+                "name": item.name,
+                "keywords": item.keywords,
+                "indices": item.indices,
+                "y_values": item.y_values,
+                "avg_y": item.avg_y,
+                "checked": item.checked,
+            }
 
+        # 金額也放在 Donate No 下
         if self.donate_money:
-            donate_no["Donate_Money"] = {
+            donate_no["Donate No"]["Donate_Money"] = {
                 "amount": self.donate_money.amount,
                 "index": self.donate_money.index,
                 "y": self.donate_money.y,
@@ -2277,6 +2704,7 @@ class DonationRulesProcessor:
             donate_no["ID_Card"] = {
                 "label": self.id_card_label,
                 "number": self.id_card_number if self.id_card_number else None,
+                "incomplete": self.id_card_incomplete,  # True = 長度9，APP顯示紅字
             }
 
         # 第八階段：奉獻者姓名資料
@@ -2323,34 +2751,251 @@ class DonationRulesProcessor:
                 "mail": self.mail if self.mail else None,
             }
 
+        # 為每個原始 block 添加 merged 旗標
+        blocks_with_merged = []
+        for block in self.original_blocks:
+            block_copy = block.copy()
+            block_copy["merged"] = block["index"] in self.merged_indices
+            blocks_with_merged.append(block_copy)
+
+        # 收集警告資訊（APP 顯示紅字的欄位）
+        warnings = []
+        if self.id_card_incomplete:
+            warnings.append({
+                "field": "id_card_number",
+                "message": "身分證字號長度為9，可能不完整",
+                "value": self.id_card_number,
+            })
+
         result = {
             "output_text": output_text,
             "donate_no": donate_no,
+            "warnings": warnings,  # APP 顯示紅字的欄位列表
             "filtered_blocks": self.filtered_blocks,
+            "blocks_with_merged": blocks_with_merged,  # 帶有 merged 旗標的 blocks
             "stats": {
                 "original_blocks_count": len(self.original_blocks),
                 "filtered_blocks_count": len(self.filtered_blocks),
                 "filtered_count": len(self.original_blocks) - len(self.filtered_blocks),
                 "announcement_filtered_count": len(self.announcement_filtered_indices),
+                "merged_indices": sorted(list(self.merged_indices)),  # 已合併的 indices 列表
+                "merged_count": len(self.merged_indices),
             },
         }
 
         logger.info(f"處理完成: {result['stats']}")
+        logger.info(f"已合併的區塊 indices: {sorted(list(self.merged_indices))}")
         return result
 
 
-def process_donation_ocr(blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+# 捐獻袋 OCR 13階段規則處理 =============================================================================
+def process_donation_ocr(blocks: List[Dict[str, Any]], output_dir: Optional[Path] = None) -> Dict[str, Any]:
     """
     處理捐獻袋 OCR 結果的便捷函數
 
     Args:
         blocks: Vision.json 中的 blocks 陣列
+        output_dir: 輸出目錄（用於生成 Process.md 和 output.md）
 
     Returns:
         處理結果
     """
-    processor = DonationRulesProcessor(blocks)
-    return processor.process()
+    processor = DonationRulesProcessor(blocks) # 捐獻袋 OCR 13階段規則處理器: processor
+    result = processor.process()    # 處理結果: result
+
+    # 如果有指定輸出目錄，生成 Process.md 和 output.md
+    if output_dir:
+        _generate_markdown_files(processor, result, output_dir)
+
+    return result
+
+
+def _generate_markdown_files(processor: DonationRulesProcessor, result: Dict[str, Any], output_dir: Path):
+    """生成 Process.md 和 output.md 文件"""
+
+    # 生成 output.md
+    output_text = result.get("output_text", "")
+    output_md_content = f"""# 捐獻袋 OCR 辨識輸出結果
+
+---
+
+## 辨識結果輸出
+
+```
+{output_text}
+```
+
+---
+
+## 輸出項目詳細說明
+
+| # | 項目 | 狀態 | 內容 |
+|---|------|------|------|
+| 1 | 捐獻項目和金額 | {"O" if hasattr(processor, "matched_item_name") and processor.matched_item_name and processor.donate_money else "X"} | {f"{processor.matched_item_name}：{processor.donate_money.amount}" if hasattr(processor, "matched_item_name") and processor.matched_item_name and processor.donate_money else "未找到"} |
+| 2 | 合計金額 | {"O" if processor.total_amount else "X"} | {f"合計：{processor.total_amount}" if processor.total_amount else "未找到"} |
+| 3 | 收據選項 | {"O" if (processor.receipt_paper_checked or processor.receipt_electronic_checked or processor.receipt_irs_checked or processor.no_receipt_str) else "X"} | {processor.receipt_paper.get("text", "") if processor.receipt_paper_checked else (processor.receipt_electronic.get("text", "") if processor.receipt_electronic_checked else (processor.receipt_irs.get("text", "") if processor.receipt_irs_checked else (processor.no_receipt_str if processor.no_receipt_str else "未選擇")))} |
+| 4 | 不同意揭露聲明 | {"O" if processor.agree_public_checked else "X"} | {"已勾選" if processor.agree_public_checked else "未勾選"} |
+| 5 | 身分證字號 | {"O" if processor.id_card_number else "X"} | {processor.id_card_number if processor.id_card_number else "未找到"} |
+| 6 | 奉獻者姓名 | {"O" if processor.donor_name else "X"} | {processor.donor_name if processor.donor_name else "未找到"} |
+| 7 | 奉獻日期 | {"O" if processor.donation_date else "X"} | {processor.donation_date if processor.donation_date else "未找到"} |
+| 8 | 奉獻收據抬頭 | {"O" if processor.receipt_title else "X"} | {processor.receipt_title if processor.receipt_title else "未找到"} |
+| 9 | 奉獻收據寄送地址 | {"O" if processor.mailing_address else "X"} | {processor.mailing_address if processor.mailing_address else "未找到"} |
+| 10 | 聯絡電話 | {"O" if processor.telephone_number and len(processor.telephone_number) > 8 else "X"} | {processor.telephone_number if processor.telephone_number and len(processor.telephone_number) > 8 else "未找到或長度不足"} |
+| 11 | 電子信箱 | {"O" if processor.mail else "X"} | {processor.mail if processor.mail else "未找到"} |
+
+---
+
+## O/X 標記說明
+
+- **O (成功)**: 成功辨識並輸出的項目
+- **X (排除)**: 未找到或不符合條件而排除的項目
+"""
+
+    output_md_path = output_dir / "output.md"
+    output_md_path.write_text(output_md_content, encoding="utf-8")
+    logger.info(f"已生成 output.md: {output_md_path}")
+
+    # 生成 Process.md
+    stats = result.get("stats", {})
+    donate_no = result.get("donate_no", {})
+
+    process_md_content = f"""# Vision.json 13 階段處理流程記錄
+
+---
+
+## 處理統計
+
+| 項目 | 數值 |
+|------|------|
+| 原始區塊數 | {stats.get("original_blocks_count", 0)} |
+| 過濾後區塊數 | {stats.get("filtered_blocks_count", 0)} |
+| 被過濾區塊數 | {stats.get("filtered_count", 0)} |
+| 公告過濾區塊數 | {stats.get("announcement_filtered_count", 0)} |
+| 第一階段過濾 indices | {sorted(processor.stage1_filtered_indices)} |
+
+---
+
+## 第一階段：過濾無效資料
+
+- 信封上緣 Y 值: {processor.envelope_top_y}
+- 被過濾的 indices: {sorted(processor.stage1_filtered_indices)}
+
+---
+
+## 第二階段：組合捐獻項目並配對金額
+
+### 捐獻項目
+"""
+
+    for i, item in enumerate[DonateItem](processor.donate_items, 1):
+        process_md_content += f"""
+#### 項目 {i}：{item.name}
+- 關鍵字: {item.keywords}
+- indices: {item.indices}
+- Y 軸平均值: {item.avg_y}
+- 勾選狀態: {"✓ 有勾選" if item.checked else "X 未勾選"}
+"""
+
+    process_md_content += f"""
+### 捐獻金額
+- 金額: {processor.donate_money.amount if processor.donate_money else "未找到"}
+- index: {processor.donate_money.index if processor.donate_money else "N/A"}
+- Y 軸: {processor.donate_money.y if processor.donate_money else "N/A"}
+- 配對項目: {getattr(processor, "matched_item_name", "未配對")}
+
+---
+
+## 第三階段：合計金額
+
+- 合計金額: {processor.total_amount}
+- 合計 index: {processor.heji_index}
+- 合計 Y 軸: {processor.heji_y}
+
+---
+
+## 第四階段：公告聲明過濾
+
+- 過濾的區塊數: {len(processor.announcement_filtered_indices)}
+
+---
+
+## 第五階段：不同意揭露聲明
+
+- 聲明文字: {processor.agree_public_str if processor.agree_public_str else "未找到"}
+- 勾選狀態: {"✓ 有勾選" if processor.agree_public_checked else "✗ 未勾選"}
+- 不需要收據: {processor.no_receipt_str if processor.no_receipt_str else "未找到"}
+
+---
+
+## 第六階段：收據選項
+
+| 選項 | 勾選狀態 |
+|------|----------|
+| 代上傳國稅局無紙本 | {"✓" if processor.receipt_irs_checked else "✗"} |
+| 電子收據 | {"✓" if processor.receipt_electronic_checked else "✗"} |
+| 年度紙本收據 | {"✓" if processor.receipt_paper_checked else "✗"} |
+
+---
+
+## 第七階段：身分證字號
+
+- 標籤: {processor.id_card_label}
+- 號碼: {processor.id_card_number if processor.id_card_number else "未找到"}
+
+---
+
+## 第八階段：奉獻者姓名
+
+- 標籤: {processor.donor_name_label}
+- 姓名: {processor.donor_name if processor.donor_name else "未找到"}
+
+---
+
+## 第九階段：奉獻日期
+
+- 標籤: {processor.donation_date_label}
+- 日期: {processor.donation_date if processor.donation_date else "未找到"}
+
+---
+
+## 第十階段：奉獻收據抬頭
+
+- 標籤: {processor.receipt_title_label}
+- 抬頭: {processor.receipt_title if processor.receipt_title else "未找到"}
+
+---
+
+## 第十一階段：奉獻收據寄送地址
+
+- 標籤: {processor.mailing_address_label}
+- 地址: {processor.mailing_address if processor.mailing_address else "未找到"}
+
+---
+
+## 第十二階段：聯絡電話
+
+- 標籤: {processor.telephone_label}
+- 電話: {processor.telephone_number if processor.telephone_number else "未找到"}
+
+---
+
+## 第十三階段：電子信箱
+
+- 標籤: {processor.mail_title}
+- 信箱: {processor.mail if processor.mail else "未找到"}
+
+---
+
+## 最終輸出
+
+```
+{output_text}
+```
+"""
+
+    process_md_path = output_dir / "Process.md"
+    process_md_path.write_text(process_md_content, encoding="utf-8")
+    logger.info(f"已生成 Process.md: {process_md_path}")
 
 
 def process_vision_json_file(vision_json_path: str) -> Dict[str, Any]:

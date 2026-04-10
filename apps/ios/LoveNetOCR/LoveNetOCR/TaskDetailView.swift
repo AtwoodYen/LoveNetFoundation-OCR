@@ -1,7 +1,28 @@
 import SwiftUI
+import UIKit
 import os.log
 
 private let logger = Logger(subsystem: "com.lovenet.ocr", category: "TaskDetail")
+
+/// 可分享的項目類型
+enum ShareableItem: Identifiable {
+    case text(String)
+    case file(URL)
+
+    var id: String {
+        switch self {
+        case .text(let s): return "text-\(s.hashValue)"
+        case .file(let url): return "file-\(url.absoluteString)"
+        }
+    }
+
+    var activityItems: [Any] {
+        switch self {
+        case .text(let s): return [s]
+        case .file(let url): return [url]
+        }
+    }
+}
 
 struct TaskDetailView: View {
     @EnvironmentObject private var env: AppEnvironment
@@ -9,11 +30,10 @@ struct TaskDetailView: View {
 
     @State private var detail: TaskDetailPayload?
     @State private var errorText: String?
-    @State private var showShareMarkdown = false
-    @State private var showShareOffering = false
-    @State private var offeringShareText: String?
-    @State private var showShareXLSX = false
-    @State private var xlsxURL: URL?
+    @State private var shareItem: ShareableItem?
+    @State private var showOriginalImage = false
+    @State private var originalImage: UIImage?
+    @State private var isLoadingImage = false
 
     var body: some View {
         Group {
@@ -44,7 +64,7 @@ struct TaskDetailView: View {
                                 .font(.body)
                                 .textSelection(.enabled)
                             Button {
-                                showShareMarkdown = true
+                                shareItem = .text(md)
                             } label: {
                                 Label("分享文字", systemImage: "square.and.arrow.up")
                             }
@@ -86,20 +106,11 @@ struct TaskDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showShareMarkdown) {
-            if let md = detail?.full_markdown {
-                ShareSheet(items: [md])
-            }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(items: item.activityItems)
         }
-        .sheet(isPresented: $showShareOffering) {
-            if let t = offeringShareText {
-                ShareSheet(items: [t])
-            }
-        }
-        .sheet(isPresented: $showShareXLSX) {
-            if let xlsxURL {
-                ShareSheet(items: [xlsxURL])
-            }
+        .fullScreenCover(isPresented: $showOriginalImage) {
+            ImageViewer(image: originalImage, isPresented: $showOriginalImage)
         }
         .task(id: taskId) {
             await pollLoop()
@@ -169,10 +180,28 @@ struct TaskDetailView: View {
     private func exportXLSX() async {
         do {
             let url = try await env.client.exportXLSX(taskId: taskId)
-            xlsxURL = url
-            showShareXLSX = true
+            shareItem = .file(url)
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    private func loadOriginalImage() async {
+        isLoadingImage = true
+        defer { isLoadingImage = false }
+
+        do {
+            let data = try await env.client.getTaskImage(taskId: taskId)
+            if let image = UIImage(data: data) {
+                originalImage = image
+                showOriginalImage = true
+                logger.info("📷 成功載入原始圖片 (\(data.count) bytes)")
+            } else {
+                errorText = "無法解析圖片資料"
+            }
+        } catch {
+            logger.error("❌ 載入原始圖片失敗: \(error.localizedDescription)")
+            errorText = "載入圖片失敗：\(error.localizedDescription)"
         }
     }
 
@@ -186,11 +215,21 @@ struct TaskDetailView: View {
                         .font(.body)
                         .textSelection(.enabled)
                     Button {
-                        offeringShareText = ft
-                        showShareOffering = true
+                        shareItem = .text(ft)
                     } label: {
                         Label("分享摘要文字", systemImage: "square.and.arrow.up")
                     }
+                    Button {
+                        Task { await loadOriginalImage() }
+                    } label: {
+                        if isLoadingImage {
+                            ProgressView()
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Label("觀看原圖片", systemImage: "photo")
+                        }
+                    }
+                    .disabled(isLoadingImage)
                 } else if !od.summary.isEmpty {
                     ForEach(od.summary) { row in
                         LabeledContent(row.label) {
@@ -221,6 +260,68 @@ struct TaskDetailView: View {
         case "failed": return "失敗"
         case "cancelled": return "已取消"
         default: return s
+        }
+    }
+}
+
+// MARK: - ImageViewer
+
+/// 全螢幕圖片檢視器，支援縮放和平移
+struct ImageViewer: View {
+    let image: UIImage?
+    @Binding var isPresented: Bool
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                if let image {
+                    ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(
+                                width: geo.size.width * scale,
+                                height: geo.size.height * scale
+                            )
+                            .gesture(
+                                MagnificationGesture()
+                                    .onChanged { value in
+                                        let delta = value / lastScale
+                                        lastScale = value
+                                        scale = min(max(scale * delta, 1.0), 5.0)
+                                    }
+                                    .onEnded { _ in
+                                        lastScale = 1.0
+                                    }
+                            )
+                            .gesture(
+                                TapGesture(count: 2)
+                                    .onEnded {
+                                        withAnimation {
+                                            scale = scale > 1.0 ? 1.0 : 2.0
+                                        }
+                                    }
+                            )
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "無法顯示圖片",
+                        systemImage: "photo.badge.exclamationmark"
+                    )
+                }
+            }
+            .navigationTitle("原始圖片")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("關閉") {
+                        isPresented = false
+                    }
+                }
+            }
+            .background(Color.black)
         }
     }
 }

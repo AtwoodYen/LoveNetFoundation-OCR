@@ -121,6 +121,12 @@ final class OCRAPIClient {
         return tmp
     }
 
+    /// 取得任務的原始圖片
+    func getTaskImage(taskId: String) async throws -> Data {
+        let url = apiURL("tasks/\(taskId)/image")
+        return try await get(url)
+    }
+
     func uploadTask(
         fileURL: URL,
         processingMode: String = "pipeline",
