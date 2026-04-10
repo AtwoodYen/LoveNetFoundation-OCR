@@ -1216,6 +1216,12 @@ class DonationRulesProcessor:
                 id_number = next_block.get("text", "").strip()
                 logger.info(f"下一個區塊內容: '{id_number}' (長度={len(id_number)})")
 
+                # 補充規則：如果第一碼是 "0"，且長度為 9 或 10，自動改成 "O"
+                if len(id_number) in [9, 10] and id_number[0] == "0" and id_number[1:].isdigit():
+                    corrected = "O" + id_number[1:]
+                    logger.info(f"自動修正：'{id_number}' -> '{corrected}'（第一碼 0 改為 O）")
+                    id_number = corrected
+
                 # 檢查是否為有效的身分證字號格式
                 if self._is_valid_id_card(id_number):
                     self.id_card_number = id_number
@@ -1680,6 +1686,40 @@ class DonationRulesProcessor:
 
         year_string_raw = "".join(year_parts)
 
+        # 補充規則：如果在 ":" 到 "年" 之間沒有找到數字，往前找年份
+        # 由 "年" 的前一區塊往前找數字字串
+        # 特殊情況：年份可能在「奉獻日期:」標籤之前，所以需要往前找到 colon_index 之前
+        if not any(c.isdigit() for c in year_string_raw):
+            logger.debug("在 ':' 到 '年' 之間沒有找到數字，嘗試往前搜尋年份...")
+            # 從 colon_index 往前找（因為年份可能在「奉獻日期:」標籤之前）
+            search_idx = colon_index - 1
+            found_year_backwards = False
+            search_limit = 10  # 最多往前找 10 個區塊
+
+            while search_idx >= 0 and search_limit > 0:
+                block = index_to_block.get(search_idx)
+                if block is None:
+                    search_idx -= 1
+                    search_limit -= 1
+                    continue
+
+                text = block.get("text", "").strip()
+
+                # 找到數字字串（且長度 2~4）就是年份
+                if text.isdigit() and 2 <= len(text) <= 4:
+                    year_string_raw = text
+                    year_parts = [text]
+                    year_part_indices = [search_idx]
+                    found_year_backwards = True
+                    logger.info(f"往前搜尋找到年份: '{text}' at index={search_idx}")
+                    break
+
+                search_idx -= 1
+                search_limit -= 1
+
+            if not found_year_backwards:
+                logger.debug("往前搜尋沒有找到年份數字")
+
         # 年份最多4位數的處理
         # 只保留數字部分
         year_digits = "".join(c for c in year_string_raw if c.isdigit())
@@ -1728,10 +1768,12 @@ class DonationRulesProcessor:
 
         # 提取月份字串："年" 之後到 "月" 之間的所有內容
         month_parts = []
+        month_parts_indices = []
         for i in range(year_marker_pos + 1, month_marker_pos):
             idx, text = date_blocks[i]
             if text not in [":", "："]:  # 排除冒號
                 month_parts.append(text)
+                month_parts_indices.append(idx)
                 merged_date_indices.append(idx)
         month_string = "".join(month_parts)
         # 只保留數字部分
@@ -1739,10 +1781,24 @@ class DonationRulesProcessor:
         merged_date_indices.append(date_blocks[month_marker_pos][0])  # 加入 "月" 的 index
 
         # 月份合理性檢查（1~12）
+        # 特殊情況：如果月份 > 12 且有多個 parts，嘗試分割（第一個是月，其餘是日）
+        day_from_middle = ""
         month_num = None
         if month_string.isdigit():
             month_num = int(month_string)
-            if month_num < 1 or month_num > 12:
+            if month_num > 12 and len(month_parts) > 1:
+                # 嘗試用第一個 part 當月份
+                first_part = "".join(c for c in month_parts[0] if c.isdigit())
+                if first_part and first_part.isdigit():
+                    first_num = int(first_part)
+                    if 1 <= first_num <= 12:
+                        logger.info(f"月份 '{month_string}' 超過 12，嘗試分割: 月份='{first_part}'，其餘作為日期")
+                        month_string = first_part
+                        month_num = first_num
+                        # 剩餘的作為日期
+                        day_from_middle = "".join(c for c in "".join(month_parts[1:]) if c.isdigit())
+                        logger.debug(f"從中間提取的日期: '{day_from_middle}'")
+            elif month_num < 1 or month_num > 12:
                 logger.warning(f"月份 '{month_string}' 不在合理範圍 1~12")
 
         logger.debug(f"月份字串: '{month_string}' (數值: {month_num})")
@@ -1791,17 +1847,21 @@ class DonationRulesProcessor:
             return
 
         # 有 "日" 標記的情況：提取 "月" 到 "日" 之間的內容（排除 ":"）
-        day_parts = []
-        for i in range(month_marker_pos + 1, day_marker_pos):
-            idx, text = date_blocks[i]
-            if text not in [":", "："]:  # 只排除冒號
-                day_parts.append(text)
-                merged_date_indices.append(idx)
+        # 但如果 day_from_middle 已經有值，優先使用它（從年和月之間提取的）
+        if day_from_middle:
+            day_string = day_from_middle
+            logger.debug(f"使用從中間提取的日期: '{day_string}'")
+        else:
+            day_parts = []
+            for i in range(month_marker_pos + 1, day_marker_pos):
+                idx, text = date_blocks[i]
+                if text not in [":", "："]:  # 只排除冒號
+                    day_parts.append(text)
+                    merged_date_indices.append(idx)
+            day_string = "".join(day_parts)
+            # 只保留數字部分
+            day_string = "".join(c for c in day_string if c.isdigit())
         merged_date_indices.append(date_blocks[day_marker_pos][0])  # 加入 "日" 的 index
-
-        day_string = "".join(day_parts)
-        # 只保留數字部分
-        day_string = "".join(c for c in day_string if c.isdigit())
 
         logger.debug(f"日字串: '{day_string}'")
 
@@ -2279,34 +2339,47 @@ class DonationRulesProcessor:
         # 建立 index 到 block 的映射
         index_to_block = {b["index"]: b for b in all_blocks}
 
-        # 尋找電子信箱標籤
-        keyword_index = 0
-        colon_index = -1  # ":" 的 index
-
+        # 找到連續的 "電子", "信箱", ":" 標籤
+        # 先找所有 "電子" 的位置
+        dianzi_indices = []
         for block in all_blocks:
-            text = block.get("text", "").strip()
+            if block.get("text", "").strip() == "電子":
+                dianzi_indices.append(block["index"])
 
-            if keyword_index < len(self.EMAIL_KEYWORDS):
-                expected = self.EMAIL_KEYWORDS[keyword_index]
+        colon_index = -1
+        found_label = False
 
-                # 允許冒號的多種形式
-                text_matches = (
-                    text == expected or
-                    (expected == ":" and text in [":", "：", ";"])
-                )
+        for dianzi_idx in dianzi_indices:
+            # 從 "電子" 開始往後找 "信箱" 和 ":"
+            xinxiang_idx = -1
+            local_colon_idx = -1
 
-                if text_matches:
-                    if expected == ":":
-                        colon_index = block["index"]
-                    keyword_index += 1
-                    logger.debug(f"找到電子信箱關鍵字 '{expected}' (實際: '{text}') at index={block['index']}")
+            # 往後搜尋，找 "信箱" 和 ":"
+            search_idx = dianzi_idx + 1
+            max_idx = max(b["index"] for b in all_blocks) if all_blocks else 0
 
-        if keyword_index < len(self.EMAIL_KEYWORDS):
-            logger.info(f"未找到完整的電子信箱標籤 (找到 {keyword_index}/{len(self.EMAIL_KEYWORDS)} 個關鍵字)")
+            while search_idx <= max_idx:
+                block = index_to_block.get(search_idx)
+                if block:
+                    text = block.get("text", "").strip()
+                    if text == "信箱" and xinxiang_idx == -1:
+                        xinxiang_idx = search_idx
+                    elif text in [":", "：", ";"] and xinxiang_idx != -1:
+                        local_colon_idx = search_idx
+                        break
+                search_idx += 1
+
+            if xinxiang_idx != -1 and local_colon_idx != -1:
+                colon_index = local_colon_idx
+                found_label = True
+                logger.info(f"找到電子信箱標籤: 電子 index={dianzi_idx}, 信箱 index={xinxiang_idx}, : index={colon_index}")
+                break
+
+        if not found_label:
+            logger.info("未找到完整的電子信箱標籤")
             return
 
         self.mail_title = "電子信箱:"
-        logger.info(f"找到電子信箱標籤，: index={colon_index}")
 
         # 從 ":" 的下一個 index 開始往後找電子郵箱
         self._find_email_address(all_blocks, index_to_block, colon_index)
@@ -2396,7 +2469,8 @@ class DonationRulesProcessor:
         尋找電子郵箱地址
 
         從 ":" 的下一個 index 開始往後找，
-        直到找到最後一筆才停止，
+        直到找到 "線上" 或最後一筆才停止，
+        將所有區塊的文字合併，過濾只保留 ASCII 可見字元，
         Email 內容必須是 ASCII 可見字元且包含 '@'
         找到後會修正結尾（如 .con -> .com）
         """
@@ -2409,6 +2483,8 @@ class DonationRulesProcessor:
         # 取得最大 index
         max_index = max(b["index"] for b in all_blocks) if all_blocks else 0
 
+        # 收集所有區塊文字，直到 "線上" 或結束
+        email_parts = []
         while current_index <= max_index:
             block = index_to_block.get(current_index)
             if block is None:
@@ -2417,25 +2493,47 @@ class DonationRulesProcessor:
 
             text = block.get("text", "").strip()
 
-            # 檢查是否為有效的電子郵箱格式
-            if self._is_valid_email(text):
-                self.mail = text
-                logger.info(f"找到電子郵箱 '{text}' at index={current_index}")
-                # 繼續往後找，取最後一個符合條件的
-                # 如果後面還有更好的匹配，就更新
+            # 遇到 "線上" 就停止
+            if text == "線上":
+                logger.debug(f"遇到 '線上' at index={current_index}，停止搜尋")
+                break
+
+            # 將文字加入列表
+            if text:
+                email_parts.append(text)
+                logger.debug(f"收集電子郵箱部分: '{text}' at index={current_index}")
 
             current_index += 1
 
-        if self.mail:
+        # 合併所有部分
+        combined_text = "".join(email_parts)
+        logger.debug(f"合併後的文字: '{combined_text}'")
+
+        # 過濾只保留 ASCII 可見字元（字元碼 33-126）
+        # 將常見的 OCR 錯誤字元替換：• -> -（可能是連字號）
+        filtered_text = ""
+        for char in combined_text:
+            code = ord(char)
+            if 33 <= code <= 126:
+                filtered_text += char
+            elif char == "•" or char == "・":
+                # 將 • 替換為 - （可能是連字號被誤認）
+                filtered_text += "-"
+
+        logger.debug(f"過濾後的 ASCII 文字: '{filtered_text}'")
+
+        # 檢查是否為有效的電子郵箱格式
+        if self._is_valid_email(filtered_text):
+            self.mail = filtered_text
+            logger.info(f"找到電子郵箱: '{self.mail}'")
+
             # 修正電子郵箱結尾（如果與範本相差一個字）
             original_mail = self.mail
             self.mail = self._fix_email_suffix(self.mail)
             if original_mail != self.mail:
                 logger.info(f"電子信箱已修正: '{original_mail}' -> '{self.mail}'")
-            else:
-                logger.info(f"找到電子信箱: {self.mail}")
         else:
-            logger.info("未找到電子郵箱地址")
+            logger.info(f"合併後的文字 '{filtered_text}' 不是有效的電子郵箱格式")
 
     # ==================== 第十四階段：修正重複冒號 ====================
 
