@@ -1953,24 +1953,38 @@ class DonationRulesProcessor:
         self.receipt_title_label = "奉獻收據抬頭:"
         logger.info(f"  奉獻 index={fengxian_index}, : index={colon_index}")
 
-        # 方法一：往前找抬頭（從 "奉獻" 的前一個 index 開始）
-        self._find_receipt_title_backwards(index_to_block, fengxian_index)
+        # 方法一：往前找抬頭（從 "奉獻" 的前一個 index 開始，找到 ":" 或 "日" 為止）
+        title_backwards = self._find_receipt_title_backwards(index_to_block, fengxian_index)
 
-        # 方法二：��果往前沒找到，往後找
-        if not self.found_title:
-            self._find_receipt_title_forwards(all_blocks, index_to_block, colon_index)
+        # 方法二：往後找抬頭（從 ":" 的下一個 index 開始，找到下一個 "奉獻" 為止）
+        title_forwards = self._find_receipt_title_forwards(all_blocks, index_to_block, colon_index)
 
-    def _find_receipt_title_backwards(self, index_to_block: Dict[int, Dict], fengxian_index: int):
+        # 合併往前和往後找到的抬頭
+        combined_title_parts = []
+        if title_backwards:
+            combined_title_parts.append(title_backwards)
+        if title_forwards:
+            combined_title_parts.append(title_forwards)
+
+        if combined_title_parts:
+            self.receipt_title = "".join(combined_title_parts)
+            self.found_title = True
+            logger.info(f"  合併抬頭: 往前='{title_backwards or ''}' + 往後='{title_forwards or ''}' = '{self.receipt_title}'")
+
+    def _find_receipt_title_backwards(self, index_to_block: Dict[int, Dict], fengxian_index: int) -> Optional[str]:
         """
         往前找奉獻收據抬頭
 
         從 "奉獻" 的前一個 index 開始往前找，
-        直到找到 ":" 或 "日" 才停止，
-        然後合併停止點的下一個 index 到 "奉獻" 前一個 index 的所有內容
+        直到找到 ":" 或 "日" 才停止（"日" 不加入抬頭），
+        中間跳過數字字串，
+        然後合併停止點的下一個 index 到 "奉獻" 前一個 index 的內容（排除無效項）
         """
         if fengxian_index <= 0:
-            logger.info("奉獻 index 太小，無法往前找抬頭")
-            return
+            logger.info("  往前找: 奉獻 index 太小，無法往前找抬頭")
+            return None
+
+        logger.info(f"  往前找: 從 index={fengxian_index - 1} 開始往前找 ':' 或 '日'...")
 
         # 從 "奉獻" 的前一個 index 開始往前找
         current_index = fengxian_index - 1
@@ -1985,53 +1999,75 @@ class DonationRulesProcessor:
             text = block.get("text", "").strip()
 
             # 檢查是否為 ":" 或 "日"
-            if text in [":", "：", ";", "日"]:
+            if text in [":", "：", ";"]:
                 stop_index = current_index
-                logger.debug(f"往前找到停止標記 '{text}' at index={current_index}")
+                logger.info(f"  往前找: 找到 ':' at index={current_index}")
+                break
+            if text == "日":
+                stop_index = current_index
+                logger.info(f"  往前找: 找到 '日' at index={current_index}")
                 break
 
             current_index -= 1
 
         if stop_index < 0:
-            logger.info("往前找沒有找到 ':' 或 '日'")
-            return
+            logger.info("  往前找: 沒有找到 ':' 或 '日'")
+            return None
 
-        # 合併從 stop_index + 1 到 fengxian_index - 1 的所有內容
+        # 合併從 stop_index + 1 到 fengxian_index - 1 的所有內容（排除無效項和數字字串）
+        logger.info(f"  往前找: 合併 index {stop_index + 1} 到 {fengxian_index - 1} 的內容（排除無效項和數字字串）")
         title_parts = []
-        merged_title_indices = []  # 記錄被合併的 indices
+        merged_title_indices = []
+
         for idx in range(stop_index + 1, fengxian_index):
             block = index_to_block.get(idx)
             if block:
                 text = block.get("text", "").strip()
-                if text:
-                    title_parts.append(text)
-                    merged_title_indices.append(idx)
+                if not text:
+                    continue
+
+                # 跳過數字字串
+                if text.isdigit():
+                    logger.debug(f"    跳過(數字字串) index={idx}: '{text}'")
+                    continue
+
+                # 跳過已合併的區塊
+                if idx in self.merged_indices:
+                    logger.debug(f"    跳過(已合併) index={idx}: '{text}'")
+                    continue
+
+                title_parts.append(text)
+                merged_title_indices.append(idx)
+                logger.debug(f"    加入抬頭部分 '{text}' at index={idx}")
 
         if title_parts:
-            self.receipt_title = "".join(title_parts)
-            self.found_title = True
+            result = "".join(title_parts)
             # 標記已合併的區塊
             for idx in merged_title_indices:
                 self.merged_indices.add(idx)
-            logger.info(f"往前找到奉獻收據抬頭: {self.receipt_title}")
-            logger.debug(f"  [合併標記] 抬頭的 indices: {merged_title_indices}")
+            logger.info(f"  往前找: 找到抬頭部分 '{result}'")
+            logger.debug(f"  往前找: [合併標記] indices: {merged_title_indices}")
+            return result
         else:
-            logger.info("往前找沒有找到抬頭內容")
+            logger.info("  往前找: 沒有找到抬頭內容")
+            return None
 
-    def _find_receipt_title_forwards(self, all_blocks: List[Dict], index_to_block: Dict[int, Dict], colon_index: int):
+    def _find_receipt_title_forwards(self, all_blocks: List[Dict], index_to_block: Dict[int, Dict], colon_index: int) -> Optional[str]:
         """
         往後找奉獻收據抬頭
 
         從 ":" 的下一個 index 開始往後找，
-        直到找到下一個 "奉獻" 才停止，
-        "奉獻" 不加入抬頭中
+        直到找到 "奉獻" 才停止（"奉獻" 不加入抬頭），
+        中間跳過數字字串
         """
         if colon_index < 0:
-            logger.info("沒有找到 ':'，無法往後找抬頭")
-            return
+            logger.info("  往後找: 沒有找到 ':'，無法往後找抬頭")
+            return None
+
+        logger.info(f"  往後找: 從 ':' 的下一個 index={colon_index + 1} 開始...")
 
         title_parts = []
-        merged_title_indices = []  # 記錄被合併的 indices
+        merged_title_indices = []
         current_index = colon_index + 1
 
         # 取得最大 index
@@ -2047,27 +2083,40 @@ class DonationRulesProcessor:
 
             # 如果找到 "奉獻"，停止（不加入）
             if text == "奉獻":
-                logger.debug(f"往後找到 '奉獻' at index={current_index}，停止")
+                logger.info(f"  往後找: 找到 '奉獻' at index={current_index}，停止")
                 break
+
+            # 跳過數字字串
+            if text.isdigit():
+                logger.debug(f"  往後找: 跳過(數字字串) index={current_index}: '{text}'")
+                current_index += 1
+                continue
+
+            # 跳過已合併的區塊
+            if current_index in self.merged_indices:
+                logger.debug(f"  往後找: 跳過(已合併) index={current_index}: '{text}'")
+                current_index += 1
+                continue
 
             # 加入抬頭
             if text:
                 title_parts.append(text)
                 merged_title_indices.append(current_index)
-                logger.debug(f"往後找到抬頭部分 '{text}' at index={current_index}")
+                logger.debug(f"  往後找: 加入抬頭部分 '{text}' at index={current_index}")
 
             current_index += 1
 
         if title_parts:
-            self.receipt_title = "".join(title_parts)
-            self.found_title = True
+            result = "".join(title_parts)
             # 標記已合併的區塊
             for idx in merged_title_indices:
                 self.merged_indices.add(idx)
-            logger.info(f"往後找到奉獻收據抬頭: {self.receipt_title}")
-            logger.debug(f"  [合併標記] 抬頭的 indices: {merged_title_indices}")
+            logger.info(f"  往後找: 找到抬頭部分 '{result}'")
+            logger.debug(f"  往後找: [合併標記] indices: {merged_title_indices}")
+            return result
         else:
-            logger.info("往後找沒有找到抬頭內容")
+            logger.info("  往後找: 沒有找到抬頭內容")
+            return None
 
     # ==================== 第十一階段：奉獻收據寄送地址 ====================
 
