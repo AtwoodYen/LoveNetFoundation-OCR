@@ -12,6 +12,13 @@ def _default_assets_dir() -> str:
     return str((Path(__file__).resolve().parents[3] / "assets").resolve())
 
 
+def _default_pp_layout_model_dir() -> str:
+    """repo 根目錄下的 models/PP-DocLayoutV3_safetensors"""
+    return str(
+        (Path(__file__).resolve().parents[4] / "models" / "PP-DocLayoutV3_safetensors").resolve()
+    )
+
+
 class Settings(BaseSettings):
     """应用配置"""
 
@@ -31,6 +38,13 @@ class Settings(BaseSettings):
     # 靜態資源（表單範本 JSON、參考 PDF 等）
     ASSETS_DIR: str = _default_assets_dir()
 
+    # PP-DocLayoutV3 版面分析模型路徑（repo 根目錄下的 models 資料夾）
+    # 設為空字串可停用版面分析，直接使用全圖 OCR
+    PP_LAYOUT_MODEL_DIR: str = _default_pp_layout_model_dir()
+
+    # 版面分析偵測信心閾值（低於此值的 region 不採用）
+    PP_LAYOUT_THRESHOLD: float = 0.5
+
     # 版面 / OCR 推論服務（與本 API 分離；Worker 會對此 URL 送 POST）
     # .env 可用 LAYOUT_OCR_URL 或 layout_ocr_url（case_sensitive=True 時需別名）
     layout_ocr_url: str = Field(
@@ -41,6 +55,15 @@ class Settings(BaseSettings):
     # Google Cloud Vision API Key
     # 環境變數：GOOGLE_VISION_API_KEY
     GOOGLE_VISION_API_KEY: str = ""
+
+    # OpenAI API Key（用於 LLM 後處理糾正手寫辨識錯誤）
+    # 環境變數：OPENAI_API_KEY
+    # 若留空則跳過 LLM 糾正步驟，直接使用規則引擎輸出
+    OPENAI_API_KEY: str = ""
+
+    # LLM 糾正模型（預設 gpt-4o-mini，平衡速度與準確度）
+    # 環境變數：LLM_CORRECTION_MODEL
+    LLM_CORRECTION_MODEL: str = "gpt-4o-mini"
 
     # Worker配置
     RUN_WORKERS: bool = True

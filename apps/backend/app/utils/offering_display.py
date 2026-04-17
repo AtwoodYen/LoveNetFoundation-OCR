@@ -744,7 +744,7 @@ _DECLARATION_LOOSE = re.compile(
 _BUDGET_LINES: List[Tuple[str, str]] = [
     ("課程推廣與發展", "課程推廣與發展"),
     ("媒體製作與傳播", "媒體製作與傳播"),
-    ("基金會營運支出", "基金會營運支出"),
+    ("基金會營運支持", "基金會營運支持"),
     ("其他", "其他"),
 ]
 
@@ -1319,7 +1319,7 @@ def _should_prefer_v2(plain: str) -> bool:
     """新表單關鍵字出現時優先走 12 項邏輯（不以單獨「其他」觸發，避免誤判）。"""
     if any(
         k in plain
-        for k in ("課程推廣與發展", "媒體製作與傳播", "基金會營運支出")
+        for k in ("課程推廣與發展", "媒體製作與傳播", "基金會營運支持")
     ):
         return True
     if "公開揭露" in plain and "合計" in plain:

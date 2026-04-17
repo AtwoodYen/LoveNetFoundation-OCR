@@ -93,7 +93,12 @@ class DonationRulesProcessor:
 
         # 第二階段：組合捐獻項目並配對金額
         self.donate_items: List[DonateItem] = []        # 捐獻項目
-        self.donate_money: Optional[DonateMoney] = None # 捐獻金額
+        self.donate_money: Optional[DonateMoney] = None # 捐獻金額（主要/第一筆）
+
+        # 多項目捐獻支援
+        self.all_donate_moneys: List[DonateMoney] = []  # 「依」之前所有有效金額
+        self.multi_matched: List[Tuple[str, DonateMoney]] = []  # [(項目名稱, DonateMoney)]
+        self.is_multi_item: bool = False                # 是否為多項目捐獻
 
         # 第三階段：找出合計金額        
         self.total_amount: str = ""                     # 合計金額        
@@ -129,6 +134,8 @@ class DonationRulesProcessor:
         self.donor_name_label: str = ""                 # "奉獻者姓名:"標籤
         self.donor_name: str = ""                       # 奉獻者姓名
         self.found_name: bool = False                   # 是否找到姓名的旗標
+        self.donor_name_block_indices: List[int] = []   # 組成姓名的 block indices（供 PaddleOCR re-OCR 用）
+        self.donor_name_label_index: int = -1           # "奉獻者姓名:" 標籤第一個 block 的 index
 
         # 第九階段：奉獻日期
         self.donation_date_label: str = ""              # "奉獻日期:"標籤
@@ -174,6 +181,9 @@ class DonationRulesProcessor:
 
         # 第三階段：找出合計金額
         self._stage3_find_total()
+
+        # 第三階段後處理：多項目捐獻檢查（需要合計金額才能驗證）
+        self._check_multi_item_match()
 
         # 第四階段：過濾公告聲明
         self._stage4_filter_announcement()
@@ -276,64 +286,152 @@ class DonationRulesProcessor:
                     filtered_indices.add(b["index"])
                 logger.info(f"  [過濾] 連續4筆 {texts} (indices={[b['index'] for b in consecutive]})")
 
-        # 規則 5: 長度為 3 且 3 個字元相同，檢查相鄰區塊
-        # 若 index-1 或 index+1 有長度為 1 的特殊符號/英文大寫/數字，
-        # 或兩者 X 軸差距 < 30px，則這 2 筆都過濾
-        logger.info("[規則5] 檢查長度=3且3個字元相同的區塊及其相鄰區塊...")
+        # 規則5(3E/3F) — 搜尋範圍：早期（index<20）先跑，再從「課程」+1 擴展全域
+        # 長度=3且3個字元相同（如"000","ooo"），若前後相鄰有長度=1的特殊字元
+        # 或 X 軸差距 < 30px，則兩筆一起過濾。
         index_to_block = {b["index"]: b for b in blocks}
-        for block in early_blocks:
-            if block["index"] in filtered_indices:
-                continue
-            text = block.get("text", "")
-            # 檢查長度為 3 且 3 個字元都相同
-            if len(text) == 3 and len(set(text)) == 1:
-                current_index = block["index"]
-                current_x = block.get("x", 0)
-                logger.debug(f"  找到長度3且相同字元: '{text}' at index={current_index}, x={current_x}")
 
-                # 檢查 index-1 和 index+1
-                prev_block = index_to_block.get(current_index - 1)
-                next_block = index_to_block.get(current_index + 1)
+        def _apply_rule_5_6(target_blocks: List[Dict[str, Any]], label: str) -> None:
+            """對 target_blocks 套用規則 3E/3F/3J（長度3相同字元+相鄰特殊字元）"""
+            for block in target_blocks:
+                if block["index"] in filtered_indices:
+                    continue
+                text = block.get("text", "")
+                if len(text) == 3 and len(set(text)) == 1:
+                    current_index = block["index"]
+                    current_x = block.get("x", 0)
+                    prev_block = index_to_block.get(current_index - 1)
+                    next_block = index_to_block.get(current_index + 1)
+                    adjacent_to_filter = None
 
-                adjacent_to_filter = None  # 要一起過濾的相鄰區塊
+                    for adj_block in [prev_block, next_block]:
+                        if adj_block is None:
+                            continue
+                        if adj_block["index"] in filtered_indices:
+                            continue
+                        adj_text = adj_block.get("text", "").strip()
+                        adj_x = adj_block.get("x", 0)
 
-                for adj_block in [prev_block, next_block]:
-                    if adj_block is None:
-                        continue
-                    if adj_block["index"] in filtered_indices:
-                        continue
+                        # 條件A：長度1且是 Q/6/8/0/①/○ 或可見ASCII(>32) 或英大寫/數字/特殊符號
+                        is_special_char = False
+                        if len(adj_text) == 1:
+                            ch = adj_text
+                            if ch in "Q680①○" or (32 < ord(ch) < 128):
+                                is_special_char = True
+                            elif ch.isupper() or ch.isdigit() or not ch.isalnum():
+                                is_special_char = True
 
-                    adj_text = adj_block.get("text", "").strip()
-                    adj_x = adj_block.get("x", 0)
+                        # 條件B：X 軸差距 < 30px
+                        x_distance = abs(adj_x - current_x)
+                        is_close_x = x_distance < 30
 
-                    # 條件 A: 長度為 1 且是特殊符號、英文大寫、或數字
-                    is_special_char = False
-                    if len(adj_text) == 1:
-                        char = adj_text
-                        # 特殊符號（非中文、非英文小寫）
-                        if char.isupper() or char.isdigit():
-                            is_special_char = True
-                        elif not char.isalnum():
-                            # 非英數字 = 特殊符號
-                            is_special_char = True
+                        if is_special_char or is_close_x:
+                            adjacent_to_filter = adj_block
+                            reason = []
+                            if is_special_char:
+                                reason.append(f"相鄰長度1特殊字元'{adj_text}'")
+                            if is_close_x:
+                                reason.append(f"X距離{x_distance}px<30")
+                            logger.info(
+                                f"  [{label}] 過濾 '{text}'(index={current_index}) 與"
+                                f" '{adj_text}'(index={adj_block['index']}) - {', '.join(reason)}"
+                            )
+                            break
 
-                    # 條件 B: X 軸差距 < 30px
-                    x_distance = abs(adj_x - current_x)
-                    is_close_x = x_distance < 30
+                    if adjacent_to_filter:
+                        filtered_indices.add(current_index)
+                        filtered_indices.add(adjacent_to_filter["index"])
 
-                    if is_special_char or is_close_x:
-                        adjacent_to_filter = adj_block
-                        reason = []
-                        if is_special_char:
-                            reason.append(f"長度1特殊字元'{adj_text}'")
-                        if is_close_x:
-                            reason.append(f"X距離{x_distance}px<30")
-                        logger.info(f"  [過濾] '{text}'(index={current_index}) 與 '{adj_text}'(index={adj_block['index']}) - {', '.join(reason)}")
-                        break
+        logger.info("[規則5/3E/3F] 早期區塊（index<20）檢查長度=3相同字元+相鄰...")
+        _apply_rule_5_6(early_blocks, "規則5-early")
 
-                if adjacent_to_filter:
-                    filtered_indices.add(current_index)
-                    filtered_indices.add(adjacent_to_filter["index"])
+        # ──────────────────────────────────────────────────────────────────
+        # 找出「課程」起始 index 和「其他」末尾 index（供後續新規則使用）
+        # ──────────────────────────────────────────────────────────────────
+        kecheng_idx: Optional[int] = None   # 第一個「課程」的 block index
+        qita_idx: Optional[int] = None      # 最後一個「其他」的 block index
+
+        for block in blocks:
+            text = block.get("text", "").strip()
+            if text == "課程" and kecheng_idx is None:
+                kecheng_idx = block["index"]
+            if text == "其他":
+                qita_idx = block["index"]   # 取最後出現的
+
+        logger.info(
+            f"[捐獻項目範圍] 課程 index={kecheng_idx}, 其他 index={qita_idx}"
+        )
+
+        # ── 規則3A（新）：在「課程」到「其他」範圍內 ───────────────────────
+        # A-1：長度=1 的字串 → 過濾（選框標記）
+        # A-2：長度1~4的純數字字串，且值轉換後等於0 → 過濾
+        if kecheng_idx is not None and qita_idx is not None:
+            logger.info("[規則3A] 選框範圍（課程↔其他）內過濾長度1及值=0數字...")
+            for block in blocks:
+                idx = block["index"]
+                if idx < kecheng_idx or idx > qita_idx:
+                    continue
+                if idx in filtered_indices:
+                    continue
+                text = block.get("text", "").strip()
+
+                # A-1: 長度=1
+                if len(text) == 1:
+                    filtered_indices.add(idx)
+                    logger.info(f"  [規則3A-1] 過濾 '{text}' (index={idx}) - 選框範圍內長度1")
+                    continue
+
+                # A-2: 長度1~4純數字且值=0
+                if 1 <= len(text) <= 4 and re.match(r"^\d+$", text):
+                    try:
+                        if int(text) == 0:
+                            filtered_indices.add(idx)
+                            logger.info(f"  [規則3A-2] 過濾 '{text}' (index={idx}) - 選框範圍內數字值0")
+                    except ValueError:
+                        pass
+
+        # ── 規則3C（新）：從「課程」+1 往後，"0000" → 過濾 ──────────────
+        if kecheng_idx is not None:
+            logger.info("[規則3C] 從「課程」+1 過濾 '0000'...")
+            for block in blocks:
+                idx = block["index"]
+                if idx <= kecheng_idx:
+                    continue
+                if idx in filtered_indices:
+                    continue
+                if block.get("text", "").strip() == "0000":
+                    filtered_indices.add(idx)
+                    logger.info(f"  [規則3C] 過濾 '0000' (index={idx})")
+
+        # ── 規則3D（新）：從「課程」+1 往後，長度4+3個digit-0+至少1個非數字 → 過濾
+        # 保護："1000","3000" 等有效金額（四碼全數字）不受影響
+        if kecheng_idx is not None:
+            logger.info("[規則3D] 從「課程」+1 過濾長度4含3個零及非數字字元...")
+            for block in blocks:
+                idx = block["index"]
+                if idx <= kecheng_idx:
+                    continue
+                if idx in filtered_indices:
+                    continue
+                text = block.get("text", "").strip()
+                if len(text) == 4:
+                    zero_count = text.count("0")
+                    has_non_digit = any(not c.isdigit() for c in text)
+                    if zero_count >= 3 and has_non_digit:
+                        filtered_indices.add(idx)
+                        logger.info(
+                            f"  [規則3D] 過濾 '{text}' (index={idx}) - 3個零+非數字字元"
+                        )
+
+        # ── 規則3E/3F（擴展）：從「課程」+1 往後全域套用 ─────────────────
+        # （早期區塊已在規則5-early 處理，此處補足剩餘區塊）
+        if kecheng_idx is not None:
+            logger.info("[規則3E/3F] 從「課程」+1 全域檢查長度=3相同字元+相鄰...")
+            beyond_kecheng = [
+                b for b in blocks
+                if b["index"] > kecheng_idx and b["index"] >= 20  # index<20 已在 early 處理
+            ]
+            _apply_rule_5_6(beyond_kecheng, "規則3E/3F")
 
         # 建立過濾後的 blocks 列表
         self.filtered_blocks = [b for b in blocks if b["index"] not in filtered_indices]
@@ -347,22 +445,25 @@ class DonationRulesProcessor:
 
     def _has_three_same_circles(self, text: str) -> bool:
         """
-        檢查是否有 3 個相同的圓形字元 (○, o, O, 〇)
+        檢查是否有 3 個相同的圓形字元 (○, o, O, 〇, 0)
 
-        注意：不包含數字 "0"，因為數字金額如 "3000" 不應被過濾
+        規則3G：含 digit "0" 在內的圓形符號。
+        保護：純非零數字金額（如 "3000"）不被過濾；
+              全零字串（"0000"）由規則3C另行處理。
         """
-        # 只檢查圓形符號，不包含數字 0
-        circles = ["○", "o", "O", "〇"]
+        circles = set("○oO〇0")
         count = sum(1 for c in text if c in circles)
 
-        # 如果文字是純數字，不應該被過濾
-        if text.replace(",", "").replace("，", "").isdigit():
-            logger.debug(f"規則2跳過: '{text}' 是純數字金額，不過濾")
+        clean = text.replace(",", "").replace("，", "")
+        if clean.isdigit():
+            # 全零（如 "0000"）：由規則3C處理，此處放行
+            # 有效金額（如 "3000"）：不過濾
+            logger.debug(f"規則3G跳過: '{text}' 是純數字（金額或全零），不在此過濾")
             return False
 
         result = count >= 3
         if result:
-            logger.debug(f"規則2匹配: '{text}' 包含 {count} 個圓形字元")
+            logger.debug(f"規則3G匹配: '{text}' 包含 {count} 個圓形字元（含digit 0）")
         return result
 
     def _has_three_same_chars(self, text: str) -> bool:
@@ -461,31 +562,76 @@ class DonationRulesProcessor:
         # 2.3 配對金額與捐獻項目（Y 軸距離最近的就是被勾選的）
         self._match_money_to_item()
 
+        # 2.4 收集「依」之前所有有效金額（供多項目勾選檢測用）
+        self._collect_all_amounts_before_yi()
+
     def _find_donate_money(self):
-        """找出捐獻金額（第一個非 0000 的數字）"""
-        logger.info("[階段2.2] 尋找捐獻金額（第一個非0000的數字）...")
+        """找出捐獻金額
+
+        優先順序：
+        1. 千分位格式（如 100,000 / 1,000）— 最可靠，不會是 checkbox 標記
+        2. 3 位以上且值 >= 100 的純數字 — 排除 "00" 等誤讀的 checkbox 符號
+        3. 任何純數字（備用，保持向下相容）
+        """
+        logger.info("[階段2.2] 尋找捐獻金額（優先千分位格式）...")
         logger.info(f"  搜尋範圍：{len(self.filtered_blocks)} 個過濾後的區塊")
 
+        # === 第一優先：千分位格式金額（如 100,000）===
+        # 這類格式不會是 checkbox 標記，可以放心使用
         for block in self.filtered_blocks:
             text = block.get("text", "").strip()
+            if "," not in text and "，" not in text:
+                continue
+            clean_text = text.replace(",", "").replace("，", "")
+            if re.match(r"^\d+$", clean_text) and int(clean_text) >= 10:
+                self.donate_money = DonateMoney(
+                    amount=text,
+                    index=block["index"],
+                    y=block.get("y", 0),
+                )
+                logger.info(f"  [找到千分位金額] '{text}' at index={block['index']}, y={block.get('y', 0)}")
+                return
 
-            # 檢查是否為數字（移除可能的逗號）
+        # === 第二優先：3 位以上、值 >= 100 的純數字 ===
+        # 排除 "00"、"0" 等 checkbox 圈符號被 OCR 誤讀的狀況
+        for block in self.filtered_blocks:
+            text = block.get("text", "").strip()
             clean_text = text.replace(",", "").replace("，", "")
 
-            # 跳過 "0000" 或更長的全 0 字串（可能是佔位符）
-            # 但 "0" 本身是有效金額（表示零元）
+            if len(clean_text) >= 4 and re.match(r"^0+$", clean_text):
+                logger.debug(f"  [跳過] '{text}' (index={block['index']}) - 全為0（佔位符）")
+                continue
+
+            if re.match(r"^\d+$", clean_text) and len(clean_text) >= 3:
+                try:
+                    val = int(clean_text)
+                except ValueError:
+                    continue
+                if val >= 100:
+                    self.donate_money = DonateMoney(
+                        amount=text,
+                        index=block["index"],
+                        y=block.get("y", 0),
+                    )
+                    logger.info(f"  [找到3位以上金額] '{text}' at index={block['index']}, y={block.get('y', 0)}")
+                    return
+
+        # === 備用：任何純數字（保持原有行為）===
+        for block in self.filtered_blocks:
+            text = block.get("text", "").strip()
+            clean_text = text.replace(",", "").replace("，", "")
+
             if len(clean_text) >= 4 and re.match(r"^0+$", clean_text):
                 logger.debug(f"  [跳過] '{text}' (index={block['index']}) - 4位以上全為0（佔位符）")
                 continue
 
-            # 檢查是否為有效數字
             if re.match(r"^\d+$", clean_text):
                 self.donate_money = DonateMoney(
                     amount=text,
                     index=block["index"],
                     y=block.get("y", 0),
                 )
-                logger.info(f"  [找到] 捐獻金額: {text} at index={block['index']}, y={block.get('y', 0)}")
+                logger.info(f"  [找到備用金額] '{text}' at index={block['index']}, y={block.get('y', 0)}")
                 return
             else:
                 logger.debug(f"  [跳過] '{text}' (index={block['index']}) - 非純數字")
@@ -531,6 +677,148 @@ class DonationRulesProcessor:
         else:
             self.matched_item_name = ""
             logger.warning("  [配對失敗] 無法配對金額到任何捐獻項目")
+
+    def _collect_all_amounts_before_yi(self):
+        """收集在「依」之前所有有效金額（用於多項目捐獻檢測）
+
+        有效金額定義：
+        - 千分位格式（如 100,000 / 1,000）且值 > 0
+        - 純數字，3 位以上且值 >= 100
+        排除全零及疑似勾選框標記。
+        """
+        logger.info("[階段2.4] 收集「依」之前所有有效金額...")
+
+        # 找「依」的 block index 作為搜尋上界
+        yi_index: Optional[int] = None
+        for block in self.filtered_blocks:
+            if block.get("text", "").strip() == "依":
+                yi_index = block["index"]
+                logger.info(f"  找到「依」at index={yi_index}，作為搜尋上界")
+                break
+
+        collected: List[DonateMoney] = []
+        for block in self.filtered_blocks:
+            idx = block["index"]
+            if yi_index is not None and idx >= yi_index:
+                break
+            text = block.get("text", "").strip()
+            clean = text.replace(",", "").replace("，", "")
+            if not clean:
+                continue
+
+            # 千分位格式
+            if ("," in text or "，" in text) and re.match(r"^\d+$", clean):
+                try:
+                    val = int(clean)
+                except ValueError:
+                    continue
+                if val > 0:
+                    collected.append(DonateMoney(amount=text, index=idx, y=block.get("y", 0)))
+                    continue
+
+            # 3 位以上純數字，值 >= 100，排除全零
+            if re.match(r"^\d+$", clean) and len(clean) >= 3:
+                if re.match(r"^0+$", clean):
+                    continue
+                try:
+                    val = int(clean)
+                except ValueError:
+                    continue
+                if val >= 100:
+                    collected.append(DonateMoney(amount=text, index=idx, y=block.get("y", 0)))
+
+        self.all_donate_moneys = collected
+        logger.info(f"  共收集到 {len(collected)} 筆有效金額：{[m.amount for m in collected]}")
+
+    def _check_multi_item_match(self):
+        """第二階段後處理：檢查是否為多項目捐獻，並進行多對多配對
+
+        條件：
+        1. 「依」之前有 2 筆以上有效金額
+        2. 排除靠近「合計」Y 軸的合計金額後，剩餘各筆總和 == 合計
+        3. 將每筆金額與最近的捐獻項目配對
+        """
+        logger.info("=" * 60)
+        logger.info("===== 多項目捐獻檢查 =====")
+        logger.info("=" * 60)
+
+        if len(self.all_donate_moneys) < 2:
+            logger.info(f"  有效金額筆數 {len(self.all_donate_moneys)} < 2，非多項目，跳過")
+            return
+
+        # 解析合計金額為整數
+        total_clean = self.total_amount.replace(",", "").replace("，", "")
+        try:
+            total_val = int(total_clean)
+        except ValueError:
+            logger.warning(f"  合計金額 '{self.total_amount}' 無法解析，跳過多項目檢查")
+            return
+
+        if total_val == 0:
+            logger.info("  合計金額為 0，跳過多項目檢查")
+            return
+
+        # 排除靠近「合計」Y 軸的那筆（就是合計金額本身，距離閾值 60px）
+        HEJI_Y_THRESHOLD = 60
+        individual_moneys = [
+            m for m in self.all_donate_moneys
+            if self.heji_y == 0 or abs(m.y - self.heji_y) > HEJI_Y_THRESHOLD
+        ]
+
+        if len(individual_moneys) < 2:
+            logger.info(f"  排除合計金額後剩餘 {len(individual_moneys)} 筆，不足 2 筆，非多項目")
+            return
+
+        # 計算各筆金額加總
+        def _to_int(amount_str: str) -> int:
+            try:
+                return int(amount_str.replace(",", "").replace("，", ""))
+            except ValueError:
+                return 0
+
+        individual_sum = sum(_to_int(m.amount) for m in individual_moneys)
+        logger.info(
+            f"  各筆金額 {[m.amount for m in individual_moneys]} 總和={individual_sum}，合計={total_val}"
+        )
+
+        if individual_sum != total_val:
+            logger.info("  總和 ≠ 合計，非多項目捐獻（可能是重複出現的同一金額）")
+            return
+
+        # 確認為多項目捐獻
+        logger.info("  [確認] 多項目捐獻！各筆金額總和 == 合計")
+        self.is_multi_item = True
+
+        # 決定項目順序（依 DONATE_ITEMS_CONFIG 順序）
+        item_order = {cfg["name"]: i for i, cfg in enumerate(DONATE_ITEMS_CONFIG)}
+
+        # 對每筆金額找 Y 軸距離最近的捐獻項目（允許同一項目被匹配多次）
+        for money in individual_moneys:
+            min_dist = float("inf")
+            best_item: Optional[DonateItem] = None
+            for item in self.donate_items:
+                if item.avg_y == 0:
+                    continue
+                dist = abs(money.y - item.avg_y)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_item = item
+
+            if best_item:
+                self.multi_matched.append((best_item.name, money))
+                best_item.checked = True
+                for idx in best_item.indices:
+                    self.merged_indices.add(idx)
+                logger.info(
+                    f"  [配對] 金額 '{money.amount}' (y={money.y})"
+                    f" -> '{best_item.name}' (avg_y={best_item.avg_y}, 距離={min_dist})"
+                )
+            else:
+                logger.warning(f"  [未配對] 金額 '{money.amount}' 找不到對應項目")
+
+        # 依項目表單順序排列輸出
+        self.multi_matched.sort(key=lambda x: item_order.get(x[0], 99))
+        logger.info(f"  多項目配對結果（依順序）：{[(n, m.amount) for n, m in self.multi_matched]}")
 
     # ==================== 第三階段：找出合計金額 ====================
 
@@ -588,7 +876,43 @@ class DonationRulesProcessor:
                 else:
                     logger.info(f"  [排除] 距離 {distance} >= 40px，不符合條件")
 
-        # 沒找到符合條件的，使用 donate_money 的金額
+        # 備用A：找最接近「合計」Y 軸的任意有效數字區塊（多項目捐獻時 total ≠ donate_money）
+        logger.info("[階段3備用A] 以 Y 軸距離尋找最近的有效數字作為合計...")
+        best_fallback_block = None
+        best_fallback_dist = float("inf")
+        for block in self.filtered_blocks:
+            if block["index"] <= self.heji_index:
+                continue
+            text_fb = block.get("text", "").strip()
+            clean_fb = text_fb.replace(",", "").replace("，", "")
+            # 允許千分位格式或純數字
+            is_num = re.match(r"^\d+$", clean_fb) and (
+                ("," in text_fb or "，" in text_fb) or len(clean_fb) >= 1
+            )
+            if not is_num:
+                continue
+            if re.match(r"^0+$", clean_fb):
+                continue
+            try:
+                fb_val = int(clean_fb)
+            except ValueError:
+                continue
+            if fb_val == 0:
+                continue
+            fb_dist = abs(block.get("y", 0) - self.heji_y)
+            if fb_dist < best_fallback_dist:
+                best_fallback_dist = fb_dist
+                best_fallback_block = block
+
+        if best_fallback_block and best_fallback_dist < 150:
+            self.total_amount = best_fallback_block.get("text", "").strip()
+            logger.info(
+                f"[階段3備用A] 以最近數字作為合計: '{self.total_amount}'"
+                f" (Y距離={best_fallback_dist})"
+            )
+            return
+
+        # 最後備用：使用 donate_money 的金額
         self.total_amount = self.donate_money.amount
         logger.info(f"[階段3結果] 未找到符合條件的合計金額，使用捐獻金額: {self.total_amount}")
 
@@ -1326,13 +1650,21 @@ class DonationRulesProcessor:
             return
 
         self.donor_name_label = "奉獻者姓名:"
+        self.donor_name_label_index = fengxian_index
         logger.info(f"  奉獻 index={fengxian_index}, : index={colon_index}")
+
+        # 在搜尋前先記錄 merged_indices 快照，搜尋後的差集即為姓名 blocks
+        merged_before = set(self.merged_indices)
 
         # 方法一：往前找姓名（從 "奉獻" 的前一個 index 開始，找到 "收據" 為止）
         name_backwards = self._find_donor_name_backwards(index_to_block, fengxian_index)
 
         # 方法二：往後找姓名（從 ":" 的下一個 index 開始，找到下一個 "奉獻" 為止）
         name_forwards = self._find_donor_name_forwards(all_blocks, index_to_block, colon_index)
+
+        # 記錄本階段新增到 merged_indices 的 blocks（即組成姓名的 blocks）
+        self.donor_name_block_indices = sorted(self.merged_indices - merged_before)
+        logger.info(f"  姓名 block indices: {self.donor_name_block_indices}")
 
         # 合併往前和往後找到的姓名
         combined_name_parts = []
@@ -2189,18 +2521,43 @@ class DonationRulesProcessor:
         self.mailing_address_label = "奉獻收據寄送地址:"
         logger.info(f"  奉獻 index={fengxian_index}, : index={colon_index}")
 
-        # 從 ":" 的下一個 index 開始往後找地址
-        self._find_mailing_address(all_blocks, index_to_block, colon_index)
+        # 計算標籤的 y 軸最小值，供回溯搜尋使用（排除和標籤差距過大的無關 blocks）
+        label_y_values = [
+            index_to_block[i].get("y", 0)
+            for i in range(fengxian_index, colon_index + 1)
+            if i in index_to_block
+        ]
+        label_min_y = min(label_y_values) if label_y_values else 0
+        logger.info(f"  標籤 y 軸範圍: min={label_min_y}, values={label_y_values}")
 
-    def _find_mailing_address(self, all_blocks: List[Dict], index_to_block: Dict[int, Dict], colon_index: int):
+        # 從 ":" 的下一個 index 開始往後找地址（若無結果則回溯搜尋標籤前的 blocks）
+        self._find_mailing_address(
+            all_blocks, index_to_block, colon_index,
+            fengxian_index=fengxian_index,
+            label_min_y=label_min_y,
+        )
+
+    def _find_mailing_address(
+        self,
+        all_blocks: List[Dict],
+        index_to_block: Dict[int, Dict],
+        colon_index: int,
+        fengxian_index: int = 0,
+        label_min_y: int = 0,
+    ):
         """
         尋找奉獻收據寄送地址
 
-        從 ":" 的下一個 index 開始往後找，
-        直到找到 "聯絡" 才停止，
-        "聯絡" 不加入地址中
+        【主要搜尋】從 ":" 的下一個 index 開始往後找，
+        直到找到 "聯絡" 才停止，"聯絡" 不加入地址中。
 
-        開頭無效字串過濾規則：
+        【回溯搜尋】若主要搜尋未找到任何地址內容，則改為向前搜尋標籤之前的 blocks。
+        此情況發生於 OCR 返回順序中地址文字（handwritten）的 block index
+        小於標籤 block index（Vision API 有時先掃描到手寫區域）。
+        回溯搜尋使用 y 軸座標過濾，只收集 y >= (label_min_y - 100) 的 blocks，
+        避免誤抓取抬頭等其他欄位。
+
+        開頭無效字串過濾規則（主要搜尋適用）：
         1. 長度為 6，內容是 "000000"（6 個 0）-> 忽略
         2. 長度為 5，內容是 "00000"（5 個 0）-> 忽略
         3. 長度為 6，其中有 5 個以上的 "0" -> 忽略
@@ -2273,7 +2630,56 @@ class DonationRulesProcessor:
             logger.info(f"找到奉獻收據寄送地址: {self.mailing_address}")
             logger.debug(f"  [合併標記] 地址的 indices: {merged_address_indices}")
         else:
-            logger.info("未找到奉獻收據寄送地址內容")
+            # === 回溯搜尋：向前找標籤之前的地址 blocks ===
+            # 當 OCR 返回的 block 順序中，地址內容（手寫）的 index 小於標籤 index 時使用
+            if fengxian_index > 0 and label_min_y > 0:
+                logger.info("  [回溯搜尋] 主要搜尋未找到地址，改向前搜尋標籤之前的 blocks...")
+                y_threshold = label_min_y - 100
+                logger.info(f"  [回溯搜尋] y 軸閾值={y_threshold}（label_min_y={label_min_y} - 100）")
+
+                backward_parts = []
+                backward_indices = []
+
+                # 向前搜尋，但保持 index 由小到大的順序（Vision API 的 reading order）
+                search_start = max(0, fengxian_index - 50)
+                for idx in range(search_start, fengxian_index):
+                    block = index_to_block.get(idx)
+                    if block is None:
+                        continue
+
+                    text = block.get("text", "").strip()
+                    block_y = block.get("y", 0)
+
+                    # y 軸過濾：只收集與標籤同一 y 軸區域的 blocks
+                    if block_y < y_threshold:
+                        logger.debug(f"  [回溯] 跳過(y={block_y} < {y_threshold}) index={idx}: '{text}'")
+                        continue
+
+                    # 跳過已被合併的 blocks（例如：收據抬頭已被 stage10 認領）
+                    if idx in self.merged_indices:
+                        logger.debug(f"  [回溯] 跳過(已合併) index={idx}: '{text}'")
+                        continue
+
+                    # 跳過分隔符號
+                    if text in [":", "：", ";"]:
+                        logger.debug(f"  [回溯] 跳過(分隔符) index={idx}: '{text}'")
+                        continue
+
+                    if text:
+                        backward_parts.append(text)
+                        backward_indices.append(idx)
+                        logger.debug(f"  [回溯] 加入 index={idx}: '{text}' (y={block_y})")
+
+                if backward_parts:
+                    self.mailing_address = "".join(backward_parts)
+                    for idx in backward_indices:
+                        self.merged_indices.add(idx)
+                    logger.info(f"  [回溯搜尋] 找到奉獻收據寄送地址: {self.mailing_address}")
+                    logger.debug(f"  [回溯] 合併標記 indices: {backward_indices}")
+                else:
+                    logger.info("  [回溯搜尋] 亦未找到地址內容")
+            else:
+                logger.info("未找到奉獻收據寄送地址內容")
 
     # ==================== 第十二階段：聯絡電話 ====================
 
@@ -2618,7 +3024,13 @@ class DonationRulesProcessor:
 
         # 輸出捐獻項目和金額
         logger.info("[1] 捐獻項目和金額:")
-        if hasattr(self, "matched_item_name") and self.matched_item_name and self.donate_money:
+        if self.is_multi_item and self.multi_matched:
+            # 多項目捐獻：輸出每一筆配對
+            for item_name, money in self.multi_matched:
+                line = f"{item_name}：{money.amount}"
+                output_lines.append(line)
+                logger.info(f"  O(多項目): {line}")
+        elif hasattr(self, "matched_item_name") and self.matched_item_name and self.donate_money:
             line = f"{self.matched_item_name}：{self.donate_money.amount}"
             output_lines.append(line)
             logger.info(f"  O: {line}")
@@ -2768,6 +3180,28 @@ class DonationRulesProcessor:
             fixed_output_lines.append(fixed_line)
         output_lines = fixed_output_lines
 
+        # 第十五階段：線上奉獻過濾
+        logger.info("=" * 60)
+        logger.info("===== 第十五階段：線上奉獻過濾 =====")
+        logger.info("=" * 60)
+        # 在最後二筆找到"線上"及"奉獻"，都不加入輸出
+        if len(output_lines) >= 2:
+            lines_to_check = output_lines[-2:]  # 最後兩筆
+            filtered_last_lines = []
+            for line in lines_to_check:
+                if "線上" in line or "奉獻" in line:
+                    logger.info(f"  X: 移除線上奉獻相關行: '{line}'")
+                else:
+                    filtered_last_lines.append(line)
+            # 重組 output_lines：前面的行 + 過濾後的最後兩行
+            output_lines = output_lines[:-2] + filtered_last_lines
+            logger.info(f"  過濾後剩餘 {len(output_lines)} 行")
+        elif len(output_lines) == 1:
+            # 只有一行時也要檢查
+            if "線上" in output_lines[0] or "奉獻" in output_lines[0]:
+                logger.info(f"  X: 移除線上奉獻相關行: '{output_lines[0]}'")
+                output_lines = []
+
         output_text = "\n".join(output_lines)
 
         # 最終輸出摘要
@@ -2804,6 +3238,19 @@ class DonationRulesProcessor:
                 "y": self.donate_money.y,
                 "matched_item": getattr(self, "matched_item_name", ""),
             }
+
+        # 多項目捐獻資料
+        donate_no["Donate No"]["is_multi_item"] = self.is_multi_item
+        if self.is_multi_item and self.multi_matched:
+            donate_no["Donate No"]["multi_matched"] = [
+                {
+                    "item_name": item_name,
+                    "amount": money.amount,
+                    "index": money.index,
+                    "y": money.y,
+                }
+                for item_name, money in self.multi_matched
+            ]
 
         donate_no["total"] = self.total_amount
         donate_no["heji_y"] = self.heji_y
@@ -2860,6 +3307,8 @@ class DonationRulesProcessor:
                 "label": self.donor_name_label,
                 "name": self.donor_name if self.donor_name else None,
                 "found": self.found_name,
+                "block_indices": self.donor_name_block_indices,   # 組成姓名的 block indices（供 PaddleOCR re-OCR 用）
+                "label_index": self.donor_name_label_index,        # 標籤起始 index（估算姓名區域 bbox 用）
             }
 
         # 第九階段：奉獻日期資料
