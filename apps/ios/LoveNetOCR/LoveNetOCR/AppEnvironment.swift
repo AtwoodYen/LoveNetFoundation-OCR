@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// 全域後端基底 URL（真機請改為 Mac 區網 IP，例如 http://192.168.1.20:8000）
+/// 全域後端基底 URL（預設為雲端 VM，本機開發可改為 http://127.0.0.1:8000）
 final class AppEnvironment: ObservableObject {
     private static let storageKey = "LoveNetOCR.apiBaseURL"
 
@@ -17,7 +17,7 @@ final class AppEnvironment: ObservableObject {
 
     init() {
         let initial = UserDefaults.standard.string(forKey: Self.storageKey)
-            ?? "http://127.0.0.1:8000"
+            ?? "http://130.211.240.14:8000"
         let normalized = Self.trimmedBaseURLString(
             from: initial.trimmingCharacters(in: .whitespacesAndNewlines)
         )
